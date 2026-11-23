@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -37,26 +37,30 @@ function formatInputDecimal(value: number): string {
 }
 
 export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditModalProps) {
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      {visible ? (
+        <QuoteEditBody
+          key={`${item.id}-${item.updatedAt}`}
+          orderId={orderId}
+          item={item}
+          onClose={onClose}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+function QuoteEditBody({ orderId, item, onClose }: Omit<QuoteEditModalProps, 'visible'>) {
   const queryClient = useQueryClient();
   const { locale, formatCurrency } = useI18n();
 
-  const [diagnosis, setDiagnosis] = useState('');
-  const [laborInput, setLaborInput] = useState('0,00');
-  const [partsInput, setPartsInput] = useState('0,00');
-  const [discountInput, setDiscountInput] = useState('0,00');
-  const [warrantyInput, setWarrantyInput] = useState('90');
+  const [diagnosis, setDiagnosis] = useState(item.technicalDiagnosis ?? '');
+  const [laborInput, setLaborInput] = useState(formatInputDecimal(item.laborCost));
+  const [partsInput, setPartsInput] = useState(formatInputDecimal(item.partsCost));
+  const [discountInput, setDiscountInput] = useState(formatInputDecimal(item.discount));
+  const [warrantyInput, setWarrantyInput] = useState(String(item.warrantyDays));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      setDiagnosis(item.technicalDiagnosis ?? '');
-      setLaborInput(formatInputDecimal(item.laborCost));
-      setPartsInput(formatInputDecimal(item.partsCost));
-      setDiscountInput(formatInputDecimal(item.discount));
-      setWarrantyInput(String(item.warrantyDays));
-      setErrorMsg(null);
-    }
-  }, [visible, item]);
 
   const labor = parseDecimalInput(laborInput);
   const parts = parseDecimalInput(partsInput);
@@ -78,6 +82,7 @@ export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditMod
       void queryClient.invalidateQueries({ queryKey: ['order', orderId] });
       void queryClient.invalidateQueries({ queryKey: ['bench-queue'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['orders-list'] });
       onClose();
     },
     onError: (err) => {
@@ -99,11 +104,10 @@ export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditMod
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
         <View style={styles.header}>
           <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
             <X size={20} color={colors.textPrimary} />
@@ -194,8 +198,7 @@ export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditMod
             loading={saveMutation.isPending}
           />
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </KeyboardAvoidingView>
   );
 }
 

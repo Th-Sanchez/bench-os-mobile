@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -60,26 +60,22 @@ export default function DeliverItemScreen() {
     [order, itemId]
   );
 
-  const [parts, setParts] = useState<PaymentDraft[]>([]);
-  const [initialized, setInitialized] = useState(false);
+  const [customParts, setCustomParts] = useState<PaymentDraft[] | null>(null);
 
   const isFreeReturn = item?.status === 'REJECTED' || (item?.totalPrice ?? 0) <= 0;
   const expectedTotal = isFreeReturn ? 0 : (item?.totalPrice ?? 0);
 
-  useEffect(() => {
-    if (item && !initialized) {
-      if (!isFreeReturn) {
-        setParts([
-          {
-            localId: 'part-1',
-            paymentMethod: 'PIX',
-            amountText: formatInputAmount(item.totalPrice),
-          },
-        ]);
-      }
-      setInitialized(true);
-    }
-  }, [item, initialized, isFreeReturn]);
+  const parts = useMemo<PaymentDraft[]>(() => {
+    if (customParts !== null) return customParts;
+    if (!item || isFreeReturn) return [];
+    return [
+      {
+        localId: 'part-1',
+        paymentMethod: 'PIX',
+        amountText: formatInputAmount(item.totalPrice),
+      },
+    ];
+  }, [customParts, item, isFreeReturn]);
 
   const enteredSum = useMemo(() => {
     const sum = parts.reduce((acc, p) => acc + parseAmount(p.amountText), 0);
@@ -106,6 +102,7 @@ export default function DeliverItemScreen() {
       void queryClient.invalidateQueries({ queryKey: ['order', orderId] });
       void queryClient.invalidateQueries({ queryKey: ['bench-queue'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['orders-list'] });
       void queryClient.invalidateQueries({ queryKey: ['finance-summary'] });
       void queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
 
@@ -132,10 +129,10 @@ export default function DeliverItemScreen() {
   const handleAddSplit = () => {
     const nextMethod = PAYMENT_METHODS[parts.length % PAYMENT_METHODS.length];
     const suggested = remaining > 0 ? remaining : 0;
-    setParts((prev) => [
-      ...prev,
+    setCustomParts([
+      ...parts,
       {
-        localId: `part-${Date.now()}-${prev.length}`,
+        localId: `part-${Date.now()}-${parts.length}`,
         paymentMethod: nextMethod,
         amountText: formatInputAmount(suggested),
       },
@@ -144,11 +141,11 @@ export default function DeliverItemScreen() {
 
   const handleRemoveSplit = (localId: string) => {
     if (parts.length <= 1) return;
-    setParts((prev) => prev.filter((p) => p.localId !== localId));
+    setCustomParts(parts.filter((p) => p.localId !== localId));
   };
 
   const updatePart = (localId: string, patch: Partial<PaymentDraft>) => {
-    setParts((prev) => prev.map((p) => (p.localId === localId ? { ...p, ...patch } : p)));
+    setCustomParts(parts.map((p) => (p.localId === localId ? { ...p, ...patch } : p)));
   };
 
   if (orderQuery.isLoading || !order || !item) {

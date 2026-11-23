@@ -62,7 +62,10 @@ export default function CustomersScreen() {
     queryFn: () => customersApi.search(trimmedQuery || undefined),
   });
 
-  const allCustomers = customersQuery.data ?? [];
+  const allCustomers = useMemo(
+    () => customersQuery.data ?? [],
+    [customersQuery.data]
+  );
 
   const displayedCustomers = useMemo(() => {
     if (filter === 'WITH_NOTES') {

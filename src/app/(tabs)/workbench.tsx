@@ -89,7 +89,10 @@ export default function WorkbenchScreen() {
       }),
   });
 
-  const allItems = queueQuery.data?.content ?? [];
+  const allItems = useMemo(
+    () => queueQuery.data?.content ?? [],
+    [queueQuery.data]
+  );
 
   const countsByStatus = useMemo(() => {
     const counts: Record<string, number> = { ALL: allItems.length };

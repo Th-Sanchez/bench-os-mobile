@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -34,6 +34,25 @@ export function CustomerFormModal({
   onClose,
   onSaved,
 }: CustomerFormModalProps) {
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      {visible ? (
+        <CustomerFormBody
+          key={customer?.id ?? 'new'}
+          customer={customer}
+          onClose={onClose}
+          onSaved={onSaved}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+function CustomerFormBody({
+  customer,
+  onClose,
+  onSaved,
+}: Omit<CustomerFormModalProps, 'visible'>) {
   const { session } = useAuth();
   const { locale, formatPhone } = useI18n();
   const queryClient = useQueryClient();
@@ -43,21 +62,11 @@ export function CustomerFormModal({
     isEditing &&
     (session?.user.role === 'OWNER' || session?.user.role === 'ATTENDANT');
 
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [document, setDocument] = useState('');
-  const [notes, setNotes] = useState('');
+  const [name, setName] = useState(customer?.name ?? '');
+  const [phone, setPhone] = useState(customer ? formatPhone(customer.phone) : '');
+  const [document, setDocument] = useState(customer?.document ?? '');
+  const [notes, setNotes] = useState(customer?.notes ?? '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      setName(customer?.name ?? '');
-      setPhone(customer ? formatPhone(customer.phone) : '');
-      setDocument(customer?.document ?? '');
-      setNotes(customer?.notes ?? '');
-      setErrorMsg(null);
-    }
-  }, [visible, customer, formatPhone]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -131,11 +140,10 @@ export function CustomerFormModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
         <View style={styles.header}>
           <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
             <X size={20} color={colors.textPrimary} />
@@ -234,8 +242,7 @@ export function CustomerFormModal({
             loading={saveMutation.isPending}
           />
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </KeyboardAvoidingView>
   );
 }
 
