@@ -194,24 +194,18 @@ export default function NewOrderScreen() {
         items: payloadItems,
       });
 
-      // Upload optional intake photos directly to Cloudflare R2 / MinIO (zero binary bytes on JVM)
+      // Upload optional intake photos sequentially to respect mobile networks and storage rate limits
       let failedPhotos = 0;
-      const uploadTasks: Promise<unknown>[] = [];
-      createdOrder.items.forEach((createdItem, index) => {
+      for (let index = 0; index < createdOrder.items.length; index += 1) {
+        const createdItem = createdOrder.items[index];
         const uris = items[index]?.intakePhotoUris ?? [];
         for (const uri of uris) {
-          uploadTasks.push(
-            compressAndUploadItemPhoto(createdOrder.id, createdItem.id, uri, 'INTAKE').catch(
-              () => {
-                failedPhotos += 1;
-              }
-            )
-          );
+          try {
+            await compressAndUploadItemPhoto(createdOrder.id, createdItem.id, uri, 'INTAKE');
+          } catch {
+            failedPhotos += 1;
+          }
         }
-      });
-
-      if (uploadTasks.length > 0) {
-        await Promise.all(uploadTasks);
       }
 
       return { createdOrder, failedPhotos };
