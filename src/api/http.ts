@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+import { File, UploadTask, UploadType } from 'expo-file-system';
 import type { ProblemDetail } from '@/types/api';
 
 const DEFAULT_API_URL = 'http://localhost:8080';
@@ -101,7 +103,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 /**
- * Direct binary PUT upload to a Cloudflare R2 / S3 Presigned URL.
+ * Direct binary PUT upload to a Cloudflare R2 / S3 / RustFS Presigned URL.
+ * Uses native Expo FileSystem UploadTask on iOS/Android to stream the exact file bytes
+ * without relying on React Native's fetch("file://..."), and standard fetch on Web.
  * Zero binary bytes pass through the BenchOS Java backend.
  */
 export async function uploadFileToPresignedUrl(
@@ -109,7 +113,33 @@ export async function uploadFileToPresignedUrl(
   fileUri: string,
   contentType: string
 ): Promise<void> {
+  if (Platform.OS !== 'web') {
+    const file = new File(fileUri);
+    const task = new UploadTask(file, uploadUrl, {
+      httpMethod: 'PUT',
+      uploadType: UploadType.BINARY_CONTENT,
+      headers: {
+        'Content-Type': contentType,
+      },
+      mimeType: contentType,
+    });
+
+    const result = await task.uploadAsync();
+    if (result.status < 200 || result.status >= 300) {
+      throw new ApiError(
+        result.status,
+        result.body
+          ? `Failed to upload image (${result.status}): ${result.body.slice(0, 120)}`
+          : `Failed to upload image to object storage (${result.status})`
+      );
+    }
+    return;
+  }
+
   const fileResponse = await fetch(fileUri);
+  if (!fileResponse.ok) {
+    throw new ApiError(fileResponse.status, 'Failed to read local image before upload');
+  }
   const blob = await fileResponse.blob();
 
   const uploadResponse = await fetch(uploadUrl, {
@@ -121,6 +151,12 @@ export async function uploadFileToPresignedUrl(
   });
 
   if (!uploadResponse.ok) {
-    throw new ApiError(uploadResponse.status, 'Failed to upload image to object storage');
+    const details = await uploadResponse.text().catch(() => '');
+    throw new ApiError(
+      uploadResponse.status,
+      details
+        ? `Failed to upload image (${uploadResponse.status}): ${details.slice(0, 120)}`
+        : `Failed to upload image to object storage (${uploadResponse.status})`
+    );
   }
 }

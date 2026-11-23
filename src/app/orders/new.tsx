@@ -194,7 +194,8 @@ export default function NewOrderScreen() {
         items: payloadItems,
       });
 
-      // Upload optional intake photos directly to Cloudflare R2 (zero binary bytes on JVM)
+      // Upload optional intake photos directly to Cloudflare R2 / MinIO (zero binary bytes on JVM)
+      let failedPhotos = 0;
       const uploadTasks: Promise<unknown>[] = [];
       createdOrder.items.forEach((createdItem, index) => {
         const uris = items[index]?.intakePhotoUris ?? [];
@@ -202,7 +203,7 @@ export default function NewOrderScreen() {
           uploadTasks.push(
             compressAndUploadItemPhoto(createdOrder.id, createdItem.id, uri, 'INTAKE').catch(
               () => {
-                // Keep order creation successful even if one optional photo upload fails
+                failedPhotos += 1;
               }
             )
           );
@@ -213,21 +214,27 @@ export default function NewOrderScreen() {
         await Promise.all(uploadTasks);
       }
 
-      return createdOrder;
+      return { createdOrder, failedPhotos };
     },
-    onSuccess: (createdOrder) => {
+    onSuccess: ({ createdOrder, failedPhotos }) => {
       void queryClient.invalidateQueries({ queryKey: ['bench-queue'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       void queryClient.invalidateQueries({ queryKey: ['orders-list'] });
 
       const tagsList = createdOrder.items.map((i) => `#${i.tag}`).join(', ');
+      const photoWarning =
+        failedPhotos > 0
+          ? locale === 'pt-BR'
+            ? `\n\nAtenção: ${failedPhotos} foto(s) não puderam ser enviadas (verifique o MinIO/R2). Você pode adicioná-las no detalhe do aparelho.`
+            : `\n\nNote: ${failedPhotos} photo(s) failed to upload. You can retry inside the appliance detail screen.`
+          : '';
       Alert.alert(
         locale === 'pt-BR'
           ? `OS #${createdOrder.orderNumber} aberta!`
           : `Order #${createdOrder.orderNumber} created!`,
         locale === 'pt-BR'
-          ? `Etiquetas físicas geradas: ${tagsList}\n\nDeseja enviar o comprovante com todos os aparelhos no WhatsApp?`
-          : `Generated bench tags: ${tagsList}\n\nSend the intake receipt via WhatsApp?`,
+          ? `Etiquetas físicas geradas: ${tagsList}${photoWarning}\n\nDeseja enviar o comprovante com todos os aparelhos no WhatsApp?`
+          : `Generated bench tags: ${tagsList}${photoWarning}\n\nSend the intake receipt via WhatsApp?`,
         [
           {
             text: locale === 'pt-BR' ? 'Ir para Bancada' : 'Go to Bench',

@@ -280,25 +280,8 @@ export default function LoginScreen() {
             </View>
           </Card>
 
-          {/* Secondary Helper & Language Footer */}
+          {/* Language & Meta Footer */}
           <View style={styles.footer}>
-            {mode === 'login' ? (
-              <>
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>{t.auth.newHere}</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
-                <Button
-                  label={t.auth.registerPrompt}
-                  variant="secondary"
-                  onPress={() => switchMode('register')}
-                  icon={<Building2 size={16} color={colors.brandPrimary} />}
-                />
-              </>
-            ) : null}
-
             <View style={styles.metaFooter}>
               <Pressable
                 onPress={() => setLocale(locale === 'pt-BR' ? 'en' : 'pt-BR')}
@@ -462,23 +445,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   footer: {
-    gap: 16,
     marginTop: 4,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.borderSubtle,
-  },
-  dividerText: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 11,
-    color: colors.textMuted,
   },
   metaFooter: {
     alignItems: 'center',
