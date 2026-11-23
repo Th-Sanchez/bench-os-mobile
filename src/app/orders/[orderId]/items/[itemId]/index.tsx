@@ -33,8 +33,13 @@ import {
   X,
 } from 'lucide-react-native';
 import { ordersApi, photosApi } from '@/api/endpoints';
-import { ApiError } from '@/api/http';
+import { API_BASE_URL, ApiError } from '@/api/http';
+import { useAuth } from '@/auth/AuthProvider';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
+import {
+  inferWhatsappStageFromStatuses,
+  WhatsappStageModal,
+} from '@/components/orders/WhatsappStageModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -75,11 +80,16 @@ function getProgressStepIndex(status: ItemStatus): number {
 export default function ApplianceDetailScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { session } = useAuth();
   const { orderId, itemId } = useLocalSearchParams<{ orderId: string; itemId: string }>();
   const { t, locale, formatCurrency, formatPhone, formatShortDate } = useI18n();
 
+  const canDoTechnicalWork =
+    session?.user.role === 'OWNER' || session?.user.role === 'TECHNICIAN';
+
   const [selectedPhotoStage, setSelectedPhotoStage] = useState<PhotoStage>('INTAKE');
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -119,6 +129,7 @@ export default function ApplianceDetailScreen() {
     void queryClient.invalidateQueries({ queryKey: ['order', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['bench-queue'] });
     void queryClient.invalidateQueries({ queryKey: ['orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['orders-list'] });
   };
 
   const transitionMutation = useMutation({
@@ -134,16 +145,6 @@ export default function ApplianceDetailScreen() {
         locale === 'pt-BR' ? 'Ação não permitida' : 'Action not allowed',
         err instanceof ApiError ? err.message : t.common.errorGeneric
       );
-    },
-  });
-
-  const whatsappMutation = useMutation({
-    mutationFn: () => ordersApi.getWhatsappLink(orderId, itemId),
-    onSuccess: (res) => {
-      void Linking.openURL(res.whatsappUrl);
-    },
-    onError: (err) => {
-      Alert.alert('WhatsApp', err instanceof ApiError ? err.message : t.common.errorGeneric);
     },
   });
 
@@ -197,6 +198,10 @@ export default function ApplianceDetailScreen() {
     );
   };
 
+  const openPublicTrackingWeb = (publicToken: string) => {
+    void Linking.openURL(`${API_BASE_URL}/track/${publicToken}`);
+  };
+
   const handleOverflowMenu = () => {
     if (!order || !item) return;
     const isTerminal =
@@ -206,13 +211,9 @@ export default function ApplianceDetailScreen() {
       {
         text:
           locale === 'pt-BR'
-            ? 'Ver página pública do cliente'
-            : 'Preview public tracking page',
-        onPress: () =>
-          router.push({
-            pathname: '/track/[publicToken]',
-            params: { publicToken: order.publicToken },
-          }),
+            ? 'Abrir página pública no navegador'
+            : 'Open public tracking page in browser',
+        onPress: () => openPublicTrackingWeb(order.publicToken),
       },
     ];
 
@@ -257,7 +258,8 @@ export default function ApplianceDetailScreen() {
 
   const applianceTitle = [item.applianceType, item.brand, item.model].filter(Boolean).join(' ');
   const activeStep = getProgressStepIndex(item.status);
-  const isQuoteEditable = item.status === 'DIAGNOSING' || item.status === 'QUOTE_SENT';
+  const isQuoteEditable =
+    canDoTechnicalWork && (item.status === 'DIAGNOSING' || item.status === 'QUOTE_SENT');
   const isQuoteLocked =
     item.status === 'APPROVED' || item.status === 'WAITING_PARTS' || item.status === 'IN_REPAIR';
   const currentStagePhotos = photosByStage[selectedPhotoStage];
@@ -267,6 +269,15 @@ export default function ApplianceDetailScreen() {
 
     switch (item.status) {
       case 'RECEIVED':
+        if (!canDoTechnicalWork) {
+          return (
+            <View style={styles.terminalChip}>
+              <Text style={styles.terminalText}>
+                {locale === 'pt-BR' ? 'Aguardando técnico' : 'Awaiting technician'}
+              </Text>
+            </View>
+          );
+        }
         return (
           <Button
             label={locale === 'pt-BR' ? 'Iniciar Diagnóstico' : 'Start Diagnosis'}
@@ -276,6 +287,15 @@ export default function ApplianceDetailScreen() {
           />
         );
       case 'DIAGNOSING':
+        if (!canDoTechnicalWork) {
+          return (
+            <View style={styles.terminalChip}>
+              <Text style={styles.terminalText}>
+                {locale === 'pt-BR' ? 'Em diagnóstico técnico' : 'Diagnosing on bench'}
+              </Text>
+            </View>
+          );
+        }
         return (
           <Button
             label={locale === 'pt-BR' ? 'Enviar Orçamento' : 'Send Quote'}
@@ -303,6 +323,15 @@ export default function ApplianceDetailScreen() {
           </View>
         );
       case 'APPROVED':
+        if (!canDoTechnicalWork) {
+          return (
+            <View style={styles.terminalChip}>
+              <Text style={styles.terminalText}>
+                {locale === 'pt-BR' ? 'Aprovado · Em bancada' : 'Approved · On bench'}
+              </Text>
+            </View>
+          );
+        }
         return (
           <View style={styles.dualDecisionRow}>
             <Button
@@ -321,6 +350,13 @@ export default function ApplianceDetailScreen() {
           </View>
         );
       case 'WAITING_PARTS':
+        if (!canDoTechnicalWork) {
+          return (
+            <View style={styles.terminalChip}>
+              <Text style={styles.terminalText}>{t.status.WAITING_PARTS}</Text>
+            </View>
+          );
+        }
         return (
           <Button
             label={locale === 'pt-BR' ? 'Iniciar Conserto' : 'Start Repair'}
@@ -330,6 +366,13 @@ export default function ApplianceDetailScreen() {
           />
         );
       case 'IN_REPAIR':
+        if (!canDoTechnicalWork) {
+          return (
+            <View style={styles.terminalChip}>
+              <Text style={styles.terminalText}>{t.status.IN_REPAIR}</Text>
+            </View>
+          );
+        }
         return (
           <Button
             label={locale === 'pt-BR' ? 'Marcar Pronto' : 'Mark Ready'}
@@ -459,16 +502,11 @@ export default function ApplianceDetailScreen() {
               </View>
             </View>
             <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: '/track/[publicToken]',
-                  params: { publicToken: order.publicToken },
-                })
-              }
+              onPress={() => openPublicTrackingWeb(order.publicToken)}
               style={styles.publicLinkChip}
             >
               <Text style={styles.publicLinkText}>
-                {locale === 'pt-BR' ? 'Ver link' : 'Track'}
+                {locale === 'pt-BR' ? 'Link Web' : 'Web Link'}
               </Text>
               <ChevronRight size={13} color={colors.brandPrimary} />
             </Pressable>
@@ -626,14 +664,16 @@ export default function ApplianceDetailScreen() {
                       {locale === 'pt-BR' ? 'Travado' : 'Locked'}
                     </Text>
                   </View>
-                  <Pressable
-                    onPress={() => transitionMutation.mutate({ status: 'QUOTE_SENT' })}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.reopenLink}>
-                      {locale === 'pt-BR' ? 'Reabrir' : 'Reopen'}
-                    </Text>
-                  </Pressable>
+                  {canDoTechnicalWork ? (
+                    <Pressable
+                      onPress={() => transitionMutation.mutate({ status: 'QUOTE_SENT' })}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.reopenLink}>
+                        {locale === 'pt-BR' ? 'Reabrir' : 'Reopen'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </>
               ) : isQuoteEditable ? (
                 <Pressable onPress={() => setQuoteModalOpen(true)} style={styles.inlineEditBtn}>
@@ -702,13 +742,22 @@ export default function ApplianceDetailScreen() {
           label="WhatsApp"
           variant="whatsapp"
           fullWidth={false}
-          loading={whatsappMutation.isPending}
-          onPress={() => whatsappMutation.mutate()}
+          onPress={() => setWhatsappModalOpen(true)}
           icon={<MessageCircle size={17} color={colors.successDark} />}
           style={styles.whatsappBarBtn}
         />
         {renderPrimaryAction()}
       </View>
+
+      {/* Consolidated Order WhatsApp Stage Modal */}
+      <WhatsappStageModal
+        visible={whatsappModalOpen}
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        itemCount={order.items.length}
+        suggestedStage={inferWhatsappStageFromStatuses(order.items.map((i) => i.status))}
+        onClose={() => setWhatsappModalOpen(false)}
+      />
 
       {/* Quote Editor Modal */}
       <QuoteEditModal

@@ -19,6 +19,8 @@ export type OrderPaymentMethod = 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH';
 
 export type PhotoStage = 'INTAKE' | 'DIAGNOSIS' | 'COMPLETED';
 
+export type WhatsappMessageStage = 'INTAKE' | 'QUOTE' | 'READY';
+
 export type TransactionType = 'INCOME' | 'EXPENSE';
 
 export type TransactionCategory =
@@ -106,14 +108,19 @@ export interface TenantSettingsResponse {
   defaultLaborCost: number;
   defaultEstimatedDays: number;
   abandonmentDays: number;
+  whatsappIntakeTemplate: string | null;
   whatsappQuoteTemplate: string | null;
+  whatsappReadyTemplate: string | null;
+  customApplianceTypes: string[];
 }
 
 export interface UpdateTenantSettingsRequest {
   defaultLaborCost: number;
   defaultEstimatedDays: number;
   abandonmentDays: number;
+  whatsappIntakeTemplate?: string;
   whatsappQuoteTemplate: string;
+  whatsappReadyTemplate?: string;
 }
 
 // Customer
@@ -302,6 +309,7 @@ export interface PublicOrderItemResponse {
 
 export interface PublicOrderResponse {
   shopName: string;
+  shopPhone: string | null;
   orderNumber: number;
   createdAt: string;
   items: PublicOrderItemResponse[];

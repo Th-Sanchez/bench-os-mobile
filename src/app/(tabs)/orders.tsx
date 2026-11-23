@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   ClipboardList,
+  MessageCircle,
   Phone,
   Plus,
   Search,
@@ -25,6 +26,10 @@ import {
 } from 'lucide-react-native';
 import { ordersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
+import {
+  inferWhatsappStageFromStatuses,
+  WhatsappStageModal,
+} from '@/components/orders/WhatsappStageModal';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -74,6 +79,7 @@ export default function OrdersScreen() {
 
   const [searchText, setSearchText] = useState('');
   const [filter, setFilter] = useState<OrderFilter>('ALL');
+  const [whatsappOrder, setWhatsappOrder] = useState<ServiceOrderResponse | null>(null);
 
   const trimmedSearch = searchText.trim();
   const numberMatch = trimmedSearch.match(ORDER_NUMBER_PATTERN);
@@ -198,16 +204,26 @@ export default function OrdersScreen() {
               {order.customerName || (locale === 'pt-BR' ? 'Cliente' : 'Customer')}
             </Text>
           </View>
-          {order.customerPhone ? (
+          <View style={styles.customerActions}>
+            {order.customerPhone ? (
+              <Pressable
+                onPress={() => handleCallCustomer(order.customerPhone)}
+                hitSlop={8}
+                style={styles.phoneLink}
+              >
+                <Phone size={11} color={colors.textMuted} strokeWidth={2} />
+                <Text style={styles.phoneText}>{formatPhone(order.customerPhone)}</Text>
+              </Pressable>
+            ) : null}
             <Pressable
-              onPress={() => handleCallCustomer(order.customerPhone)}
-              hitSlop={8}
-              style={styles.phoneLink}
+              onPress={() => setWhatsappOrder(order)}
+              hitSlop={6}
+              style={styles.waIconBtn}
+              accessibilityLabel="WhatsApp"
             >
-              <Phone size={11} color={colors.textMuted} strokeWidth={2} />
-              <Text style={styles.phoneText}>{formatPhone(order.customerPhone)}</Text>
+              <MessageCircle size={14} color={colors.successDark} strokeWidth={2.2} />
             </Pressable>
-          ) : null}
+          </View>
         </View>
 
         {/* Nested Appliance Rows */}
@@ -448,6 +464,19 @@ export default function OrdersScreen() {
         <Plus size={18} color={colors.textOnDark} strokeWidth={2.5} />
         <Text style={styles.fabText}>{locale === 'pt-BR' ? 'Nova OS' : 'New Order'}</Text>
       </Pressable>
+
+      {whatsappOrder ? (
+        <WhatsappStageModal
+          visible={whatsappOrder !== null}
+          orderId={whatsappOrder.id}
+          orderNumber={whatsappOrder.orderNumber}
+          itemCount={whatsappOrder.items.length}
+          suggestedStage={inferWhatsappStageFromStatuses(
+            whatsappOrder.items.map((i) => i.status)
+          )}
+          onClose={() => setWhatsappOrder(null)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -635,6 +664,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
     flexShrink: 1,
+  },
+  customerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  waIconBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   phoneLink: {
     flexDirection: 'row',

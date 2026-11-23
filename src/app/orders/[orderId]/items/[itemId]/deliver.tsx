@@ -134,7 +134,7 @@ export default function DeliverItemScreen() {
       {
         localId: `part-${Date.now()}-${parts.length}`,
         paymentMethod: nextMethod,
-        amountText: formatInputAmount(suggested),
+        amountText: suggested > 0 ? formatInputAmount(suggested) : '',
       },
     ]);
   };
@@ -296,6 +296,8 @@ export default function DeliverItemScreen() {
                         <TextInput
                           value={part.amountText}
                           onChangeText={(val) => updatePart(part.localId, { amountText: val })}
+                          placeholder="0,00"
+                          placeholderTextColor={colors.textMuted}
                           keyboardType="decimal-pad"
                           style={styles.amountInput}
                         />

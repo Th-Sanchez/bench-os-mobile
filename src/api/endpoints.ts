@@ -33,6 +33,7 @@ import type {
   UpsertSupplierRequest,
   UserResponse,
   WhatsappLinkResponse,
+  WhatsappMessageStage,
 } from '@/types/api';
 
 export const authApi = {
@@ -64,6 +65,16 @@ export const tenantSettingsApi = {
   get: () => apiRequest<TenantSettingsResponse>('/api/v1/tenant/settings'),
   update: (payload: UpdateTenantSettingsRequest) =>
     apiRequest<TenantSettingsResponse>('/api/v1/tenant/settings', { method: 'PUT', body: payload }),
+  addApplianceType: (name: string) =>
+    apiRequest<TenantSettingsResponse>('/api/v1/tenant/settings/appliance-types', {
+      method: 'POST',
+      body: { name },
+    }),
+  removeApplianceType: (name: string) =>
+    apiRequest<TenantSettingsResponse>('/api/v1/tenant/settings/appliance-types', {
+      method: 'DELETE',
+      query: { name },
+    }),
 };
 
 export const customersApi = {
@@ -120,6 +131,11 @@ export const ordersApi = {
     apiRequest<ServiceOrderItemResponse>(`/api/v1/orders/${orderId}/items/${itemId}/deliver`, {
       method: 'POST',
       body: payload ?? {},
+    }),
+
+  getOrderWhatsappLink: (orderId: string, stage?: WhatsappMessageStage) =>
+    apiRequest<WhatsappLinkResponse>(`/api/v1/orders/${orderId}/whatsapp-link`, {
+      query: stage ? { stage } : undefined,
     }),
 
   getWhatsappLink: (orderId: string, itemId: string) =>

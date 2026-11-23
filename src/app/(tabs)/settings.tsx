@@ -18,7 +18,9 @@ import {
   Check,
   Info,
   LogOut,
+  Plus,
   Settings,
+  X,
 } from 'lucide-react-native';
 import { tenantSettingsApi, usersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
@@ -26,18 +28,54 @@ import { TeamMemberModal } from '@/components/settings/TeamMemberModal';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
-import type { Role, UpdateTenantSettingsRequest, UserResponse } from '@/types/api';
+import type {
+  Role,
+  UpdateTenantSettingsRequest,
+  UserResponse,
+  WhatsappMessageStage,
+} from '@/types/api';
 
-const TEMPLATE_VARIABLES = [
-  '{customerName}',
-  '{appliance}',
-  '{orderNumber}',
-  '{totalPrice}',
-  '{trackingUrl}',
+const TEMPLATE_PLACEHOLDERS = [
+  { api: '{customerName}', ptBr: '{nomeCliente}' },
+  { api: '{appliances}', ptBr: '{aparelhos}' },
+  { api: '{orderNumber}', ptBr: '{numeroOS}' },
+  { api: '{totalPrice}', ptBr: '{valorTotal}' },
+  { api: '{trackingUrl}', ptBr: '{linkAcompanhamento}' },
 ] as const;
 
-const DEFAULT_WHATSAPP_TEMPLATE =
-  'Olá {customerName}! Orçamento do {appliance} (OS #{orderNumber}): {totalPrice}. Acompanhe: {trackingUrl}';
+const LEGACY_PLACEHOLDERS = [{ api: '{appliance}', ptBr: '{aparelho}' }] as const;
+
+const DEFAULT_TEMPLATES_API: Record<WhatsappMessageStage, string> = {
+  INTAKE:
+    'Olá {customerName}! Registramos sua OS #{orderNumber}:\n{appliances}\nAcompanhe o andamento em tempo real: {trackingUrl}',
+  QUOTE:
+    'Olá {customerName}! Segue o orçamento da OS #{orderNumber}:\n{appliances}\nTotal: {totalPrice}\nAprove ou acompanhe por aqui: {trackingUrl}',
+  READY:
+    'Olá {customerName}! Seus aparelhos da OS #{orderNumber} estão prontos para retirada:\n{appliances}\nTotal: {totalPrice}\nDetalhes: {trackingUrl}',
+};
+
+function toDisplayTemplate(apiTemplate: string, locale: 'pt-BR' | 'en'): string {
+  let result = apiTemplate;
+  const allPairs = [...TEMPLATE_PLACEHOLDERS, ...LEGACY_PLACEHOLDERS];
+  if (locale === 'pt-BR') {
+    for (const pair of allPairs) {
+      result = result.split(pair.api).join(pair.ptBr);
+    }
+  } else {
+    for (const pair of allPairs) {
+      result = result.split(pair.ptBr).join(pair.api);
+    }
+  }
+  return result;
+}
+
+function toApiTemplate(displayTemplate: string): string {
+  let result = displayTemplate;
+  for (const pair of [...TEMPLATE_PLACEHOLDERS, ...LEGACY_PLACEHOLDERS]) {
+    result = result.split(pair.ptBr).join(pair.api);
+  }
+  return result;
+}
 
 function getInitials(name: string): string {
   return (
@@ -51,10 +89,11 @@ function getInitials(name: string): string {
 }
 
 function formatMoneyInput(value: number): string {
-  return value.toFixed(2).replace('.', ',');
+  return value > 0 ? value.toFixed(2).replace('.', ',') : '';
 }
 
 function parseMoneyInput(raw: string): number {
+  if (!raw.trim()) return 0;
   const cleaned = raw.trim().replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.');
   if (!cleaned) return Number.NaN;
   return Number(cleaned);
@@ -69,10 +108,17 @@ export default function SettingsScreen() {
   const [laborCostDraft, setLaborCostDraft] = useState<string | null>(null);
   const [estimatedDaysDraft, setEstimatedDaysDraft] = useState<string | null>(null);
   const [abandonmentDaysDraft, setAbandonmentDaysDraft] = useState<string | null>(null);
-  const [whatsappTemplateDraft, setWhatsappTemplateDraft] = useState<string | null>(null);
-  const [saveFeedback, setSaveFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(
-    null
-  );
+
+  const [activeTemplateStage, setActiveTemplateStage] = useState<WhatsappMessageStage>('INTAKE');
+  const [intakeDraft, setIntakeDraft] = useState<string | null>(null);
+  const [quoteDraft, setQuoteDraft] = useState<string | null>(null);
+  const [readyDraft, setReadyDraft] = useState<string | null>(null);
+
+  const [newApplianceType, setNewApplianceType] = useState('');
+  const [saveFeedback, setSaveFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
 
   const settingsQuery = useQuery({
@@ -88,13 +134,43 @@ export default function SettingsScreen() {
 
   const settingsData = settingsQuery.data;
   const laborCostInput =
-    laborCostDraft ?? formatMoneyInput(Number(settingsData?.defaultLaborCost ?? 80));
+    laborCostDraft ?? formatMoneyInput(Number(settingsData?.defaultLaborCost ?? 0));
   const estimatedDaysInput =
     estimatedDaysDraft ?? String(settingsData?.defaultEstimatedDays ?? 3);
   const abandonmentDaysInput =
     abandonmentDaysDraft ?? String(settingsData?.abandonmentDays ?? 180);
-  const whatsappTemplate =
-    whatsappTemplateDraft ?? (settingsData?.whatsappQuoteTemplate || DEFAULT_WHATSAPP_TEMPLATE);
+
+  const intakeTemplate =
+    intakeDraft ??
+    toDisplayTemplate(
+      settingsData?.whatsappIntakeTemplate || DEFAULT_TEMPLATES_API.INTAKE,
+      locale
+    );
+  const quoteTemplate =
+    quoteDraft ??
+    toDisplayTemplate(
+      settingsData?.whatsappQuoteTemplate || DEFAULT_TEMPLATES_API.QUOTE,
+      locale
+    );
+  const readyTemplate =
+    readyDraft ??
+    toDisplayTemplate(
+      settingsData?.whatsappReadyTemplate || DEFAULT_TEMPLATES_API.READY,
+      locale
+    );
+
+  const currentTemplateValue =
+    activeTemplateStage === 'INTAKE'
+      ? intakeTemplate
+      : activeTemplateStage === 'QUOTE'
+        ? quoteTemplate
+        : readyTemplate;
+
+  const setCurrentTemplateDraft = (next: string) => {
+    if (activeTemplateStage === 'INTAKE') setIntakeDraft(next);
+    else if (activeTemplateStage === 'QUOTE') setQuoteDraft(next);
+    else setReadyDraft(next);
+  };
 
   const updateSettingsMutation = useMutation({
     mutationFn: (payload: UpdateTenantSettingsRequest) => tenantSettingsApi.update(payload),
@@ -103,7 +179,9 @@ export default function SettingsScreen() {
       setLaborCostDraft(null);
       setEstimatedDaysDraft(null);
       setAbandonmentDaysDraft(null);
-      setWhatsappTemplateDraft(null);
+      setIntakeDraft(null);
+      setQuoteDraft(null);
+      setReadyDraft(null);
       setSaveFeedback({
         type: 'success',
         text:
@@ -117,6 +195,27 @@ export default function SettingsScreen() {
         type: 'error',
         text: err instanceof Error ? err.message : t.common.errorGeneric,
       });
+    },
+  });
+
+  const addApplianceTypeMutation = useMutation({
+    mutationFn: (name: string) => tenantSettingsApi.addApplianceType(name),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      setNewApplianceType('');
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const removeApplianceTypeMutation = useMutation({
+    mutationFn: (name: string) => tenantSettingsApi.removeApplianceType(name),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
     },
   });
 
@@ -178,14 +277,17 @@ export default function SettingsScreen() {
       defaultLaborCost: Number(labor.toFixed(2)),
       defaultEstimatedDays: estDays,
       abandonmentDays: abandonDays,
-      whatsappQuoteTemplate: whatsappTemplate.trim(),
+      whatsappIntakeTemplate: toApiTemplate(intakeTemplate.trim()),
+      whatsappQuoteTemplate: toApiTemplate(quoteTemplate.trim()),
+      whatsappReadyTemplate: toApiTemplate(readyTemplate.trim()),
     });
   };
 
   const handleInsertVariable = (variable: string) => {
     if (!isOwner) return;
-    const sep = whatsappTemplate.length > 0 && !whatsappTemplate.endsWith(' ') ? ' ' : '';
-    setWhatsappTemplateDraft(`${whatsappTemplate}${sep}${variable}`);
+    const sep =
+      currentTemplateValue.length > 0 && !currentTemplateValue.endsWith(' ') ? ' ' : '';
+    setCurrentTemplateDraft(`${currentTemplateValue}${sep}${variable}`);
   };
 
   const handleSignOut = () => {
@@ -218,7 +320,14 @@ export default function SettingsScreen() {
 
   const userRole: Role = session?.user.role ?? 'TECHNICIAN';
   const teamMembers = teamQuery.data ?? [];
+  const customTypes = settingsData?.customApplianceTypes ?? [];
   const isRefreshing = settingsQuery.isRefetching || (isOwner && teamQuery.isRefetching);
+
+  const stageTabs: { key: WhatsappMessageStage; label: string }[] = [
+    { key: 'INTAKE', label: locale === 'pt-BR' ? 'Entrada' : 'Intake' },
+    { key: 'QUOTE', label: locale === 'pt-BR' ? 'Orçamento' : 'Quote' },
+    { key: 'READY', label: locale === 'pt-BR' ? 'Pronto' : 'Ready' },
+  ];
 
   const renderRoleBadge = (role: Role) => {
     const isOwnerRole = role === 'OWNER';
@@ -333,6 +442,8 @@ export default function SettingsScreen() {
                     <TextInput
                       value={laborCostInput}
                       onChangeText={setLaborCostDraft}
+                      placeholder="0,00"
+                      placeholderTextColor={colors.textMuted}
                       editable={isOwner}
                       keyboardType="decimal-pad"
                       style={styles.monoInput}
@@ -387,34 +498,62 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
+              {/* 3-Stage WhatsApp Templates */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>
                   {locale === 'pt-BR'
-                    ? 'Template WhatsApp (Orçamento)'
-                    : 'WhatsApp Quote Template'}
+                    ? 'Templates de WhatsApp (por etapa da OS)'
+                    : 'WhatsApp Templates (by order stage)'}
                 </Text>
+
+                <View style={styles.templateTabsRow}>
+                  {stageTabs.map((tab) => {
+                    const active = activeTemplateStage === tab.key;
+                    return (
+                      <Pressable
+                        key={tab.key}
+                        onPress={() => setActiveTemplateStage(tab.key)}
+                        style={[styles.templateTab, active && styles.templateTabActive]}
+                      >
+                        <Text
+                          style={[
+                            styles.templateTabText,
+                            active && styles.templateTabTextActive,
+                          ]}
+                        >
+                          {tab.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
                 <TextInput
-                  value={whatsappTemplate}
-                  onChangeText={setWhatsappTemplateDraft}
+                  value={currentTemplateValue}
+                  onChangeText={setCurrentTemplateDraft}
                   editable={isOwner}
                   multiline
                   textAlignVertical="top"
                   style={[styles.textarea, !isOwner && styles.inputReadonly]}
                 />
+
                 <View style={styles.varChipsWrap}>
-                  {TEMPLATE_VARIABLES.map((variable) => (
-                    <Pressable
-                      key={variable}
-                      disabled={!isOwner}
-                      onPress={() => handleInsertVariable(variable)}
-                      style={({ pressed }) => [
-                        styles.varChip,
-                        pressed && isOwner && styles.varChipPressed,
-                      ]}
-                    >
-                      <Text style={styles.varChipText}>{variable}</Text>
-                    </Pressable>
-                  ))}
+                  {TEMPLATE_PLACEHOLDERS.map((pair) => {
+                    const displayVar = locale === 'pt-BR' ? pair.ptBr : pair.api;
+                    return (
+                      <Pressable
+                        key={pair.api}
+                        disabled={!isOwner}
+                        onPress={() => handleInsertVariable(displayVar)}
+                        style={({ pressed }) => [
+                          styles.varChip,
+                          pressed && isOwner && styles.varChipPressed,
+                        ]}
+                      >
+                        <Text style={styles.varChipText}>{displayVar}</Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
 
@@ -454,6 +593,80 @@ export default function SettingsScreen() {
                     : 'Only the workshop OWNER can modify these settings.'}
                 </Text>
               )}
+            </View>
+          )}
+        </View>
+
+        {/* Custom Appliance Types Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardOverline}>
+              {locale === 'pt-BR'
+                ? 'TIPOS DE APARELHO PERSONALIZADOS'
+                : 'CUSTOM APPLIANCE TYPES'}
+            </Text>
+          </View>
+
+          <View style={styles.addCustomRow}>
+            <TextInput
+              value={newApplianceType}
+              onChangeText={setNewApplianceType}
+              placeholder={
+                locale === 'pt-BR'
+                  ? 'Ex: Máquina de Café, Purificador...'
+                  : 'e.g. Espresso Machine...'
+              }
+              placeholderTextColor={colors.textMuted}
+              style={styles.customTypeInput}
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                if (newApplianceType.trim()) {
+                  addApplianceTypeMutation.mutate(newApplianceType.trim());
+                }
+              }}
+            />
+            <Pressable
+              disabled={!newApplianceType.trim() || addApplianceTypeMutation.isPending}
+              onPress={() => {
+                if (newApplianceType.trim()) {
+                  addApplianceTypeMutation.mutate(newApplianceType.trim());
+                }
+              }}
+              style={[
+                styles.addCustomBtn,
+                (!newApplianceType.trim() || addApplianceTypeMutation.isPending) &&
+                  styles.addCustomBtnDisabled,
+              ]}
+            >
+              {addApplianceTypeMutation.isPending ? (
+                <ActivityIndicator size="small" color={colors.textOnDark} />
+              ) : (
+                <Plus size={18} color={colors.textOnDark} strokeWidth={2.4} />
+              )}
+            </Pressable>
+          </View>
+
+          {customTypes.length === 0 ? (
+            <Text style={styles.customEmptyText}>
+              {locale === 'pt-BR'
+                ? 'Nenhum tipo extra cadastrado ainda. Os tipos adicionados aqui (ou na Nova OS) ficam disponíveis para toda a equipe.'
+                : 'No custom appliance types added yet. Types added here are shared with your entire team.'}
+            </Text>
+          ) : (
+            <View style={styles.customChipsWrap}>
+              {customTypes.map((typeName) => (
+                <View key={typeName} style={styles.customChip}>
+                  <Text style={styles.customChipText}>{typeName}</Text>
+                  {isOwner ? (
+                    <Pressable
+                      onPress={() => removeApplianceTypeMutation.mutate(typeName)}
+                      hitSlop={6}
+                    >
+                      <X size={13} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
             </View>
           )}
         </View>
@@ -722,7 +935,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   fieldGroup: {
-    gap: 5,
+    gap: 6,
   },
   fieldLabel: {
     fontFamily: fonts.bodyMedium,
@@ -773,13 +986,38 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 15,
   },
+  templateTabsRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.bgSubtle,
+    borderRadius: radius.md,
+    padding: 3,
+    gap: 4,
+  },
+  templateTab: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  templateTabActive: {
+    backgroundColor: colors.bgSurface,
+  },
+  templateTabText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  templateTabTextActive: {
+    fontFamily: fonts.bodySemiBold,
+    color: colors.brandPrimary,
+  },
   textarea: {
     backgroundColor: colors.bgInput,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     borderRadius: radius.md,
     padding: 12,
-    minHeight: 88,
+    minHeight: 96,
     fontFamily: fonts.bodyRegular,
     fontSize: 13,
     color: colors.textPrimary,
@@ -789,7 +1027,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 4,
+    marginTop: 2,
   },
   varChip: {
     backgroundColor: colors.brandPrimarySoft,
@@ -806,6 +1044,60 @@ const styles = StyleSheet.create({
     fontFamily: fonts.monoMedium,
     fontSize: 10,
     color: colors.brandPrimary,
+  },
+  addCustomRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  customTypeInput: {
+    flex: 1,
+    minHeight: 42,
+    backgroundColor: colors.bgInput,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    fontFamily: fonts.bodyRegular,
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
+  addCustomBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addCustomBtnDisabled: {
+    opacity: 0.5,
+  },
+  customEmptyText: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 12,
+    color: colors.textMuted,
+    lineHeight: 17,
+  },
+  customChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  customChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.bgSubtle,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  customChipText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.textPrimary,
   },
   feedbackBox: {
     borderRadius: radius.md,

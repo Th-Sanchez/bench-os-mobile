@@ -9,9 +9,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react-native';
-import { ordersApi } from '@/api/endpoints';
+import { ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
@@ -32,18 +32,29 @@ function parseDecimalInput(raw: string): number {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : 0;
 }
 
-function formatInputDecimal(value: number): string {
-  return value.toFixed(2).replace('.', ',');
+function formatOptionalDecimal(value: number): string {
+  return value > 0 ? value.toFixed(2).replace('.', ',') : '';
 }
 
 export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditModalProps) {
+  const settingsQuery = useQuery({
+    queryKey: ['tenant-settings'],
+    queryFn: () => tenantSettingsApi.get(),
+    enabled: visible,
+  });
+
+  const defaultLaborCost = Number(settingsQuery.data?.defaultLaborCost ?? 0);
+  const initialLabor = item.laborCost > 0 ? item.laborCost : defaultLaborCost;
+  const settingsReady = settingsQuery.isSuccess || settingsQuery.isError;
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       {visible ? (
         <QuoteEditBody
-          key={`${item.id}-${item.updatedAt}`}
+          key={`${item.id}-${item.updatedAt}-${settingsReady ? defaultLaborCost : 'pending'}`}
           orderId={orderId}
           item={item}
+          initialLabor={initialLabor}
           onClose={onClose}
         />
       ) : null}
@@ -51,15 +62,22 @@ export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditMod
   );
 }
 
-function QuoteEditBody({ orderId, item, onClose }: Omit<QuoteEditModalProps, 'visible'>) {
+function QuoteEditBody({
+  orderId,
+  item,
+  initialLabor,
+  onClose,
+}: Omit<QuoteEditModalProps, 'visible'> & { initialLabor: number }) {
   const queryClient = useQueryClient();
   const { locale, formatCurrency } = useI18n();
 
   const [diagnosis, setDiagnosis] = useState(item.technicalDiagnosis ?? '');
-  const [laborInput, setLaborInput] = useState(formatInputDecimal(item.laborCost));
-  const [partsInput, setPartsInput] = useState(formatInputDecimal(item.partsCost));
-  const [discountInput, setDiscountInput] = useState(formatInputDecimal(item.discount));
-  const [warrantyInput, setWarrantyInput] = useState(String(item.warrantyDays));
+  const [laborInput, setLaborInput] = useState(formatOptionalDecimal(initialLabor));
+  const [partsInput, setPartsInput] = useState(formatOptionalDecimal(item.partsCost));
+  const [discountInput, setDiscountInput] = useState(formatOptionalDecimal(item.discount));
+  const [warrantyInput, setWarrantyInput] = useState(
+    item.warrantyDays > 0 ? String(item.warrantyDays) : ''
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const labor = parseDecimalInput(laborInput);
@@ -143,6 +161,7 @@ function QuoteEditBody({ orderId, item, onClose }: Omit<QuoteEditModalProps, 'vi
             <View style={styles.col}>
               <TextField
                 label={locale === 'pt-BR' ? 'Mão de obra (R$)' : 'Labor (R$)'}
+                placeholder="0,00"
                 value={laborInput}
                 onChangeText={setLaborInput}
                 keyboardType="decimal-pad"
@@ -152,6 +171,7 @@ function QuoteEditBody({ orderId, item, onClose }: Omit<QuoteEditModalProps, 'vi
             <View style={styles.col}>
               <TextField
                 label={locale === 'pt-BR' ? 'Peças (R$)' : 'Parts (R$)'}
+                placeholder="0,00"
                 value={partsInput}
                 onChangeText={setPartsInput}
                 keyboardType="decimal-pad"
@@ -164,6 +184,7 @@ function QuoteEditBody({ orderId, item, onClose }: Omit<QuoteEditModalProps, 'vi
             <View style={styles.col}>
               <TextField
                 label={locale === 'pt-BR' ? 'Desconto (R$)' : 'Discount (R$)'}
+                placeholder="0,00"
                 value={discountInput}
                 onChangeText={setDiscountInput}
                 keyboardType="decimal-pad"
@@ -173,6 +194,7 @@ function QuoteEditBody({ orderId, item, onClose }: Omit<QuoteEditModalProps, 'vi
             <View style={styles.col}>
               <TextField
                 label={locale === 'pt-BR' ? 'Garantia (dias)' : 'Warranty (days)'}
+                placeholder="90"
                 value={warrantyInput}
                 onChangeText={setWarrantyInput}
                 keyboardType="numeric"

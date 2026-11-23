@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -26,7 +28,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react-native';
-import { customersApi, ordersApi } from '@/api/endpoints';
+import { customersApi, ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { CustomerFormModal } from '@/components/customers/CustomerFormModal';
 import { Button } from '@/components/ui/Button';
@@ -37,13 +39,25 @@ import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CustomerResponse, Voltage } from '@/types/api';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
 
-const QUICK_APPLIANCE_TYPES = [
+const DEFAULT_APPLIANCE_TYPES = [
   'Micro-ondas',
   'Air Fryer',
   'Liquidificador',
+  'Ventilador',
   'Aspirador',
   'Batedeira',
-  'Outro',
+  'Cafeteira',
+  'Ferro de Passar',
+  'Forno Elétrico',
+  'Panela Elétrica',
+  'Sanduicheira / Grill',
+  'Processador',
+  'Secador de Cabelo',
+  'Chapinha',
+  'Torradeira',
+  'Chaleira Elétrica',
+  'Bebedouro',
+  'Umidificador',
 ];
 
 const VOLTAGE_OPTIONS: Voltage[] = ['V110', 'V220', 'BIVOLT', 'BATTERY'];
@@ -107,6 +121,44 @@ export default function NewOrderScreen() {
   const [expandedIndex, setExpandedIndex] = useState<number>(0);
   const [orderNotes, setOrderNotes] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [addingTypeForIndex, setAddingTypeForIndex] = useState<number | null>(null);
+  const [newApplianceTypeInput, setNewApplianceTypeInput] = useState('');
+
+  const settingsQuery = useQuery({
+    queryKey: ['tenant-settings'],
+    queryFn: () => tenantSettingsApi.get(),
+  });
+
+  const applianceTypeOptions = useMemo(() => {
+    const custom = settingsQuery.data?.customApplianceTypes ?? [];
+    const seen = new Set(DEFAULT_APPLIANCE_TYPES.map((t) => t.toLowerCase()));
+    const extras = custom.filter((c) => !seen.has(c.toLowerCase()));
+    return [...DEFAULT_APPLIANCE_TYPES, ...extras, 'Outro'];
+  }, [settingsQuery.data?.customApplianceTypes]);
+
+  const addApplianceTypeMutation = useMutation({
+    mutationFn: (name: string) => tenantSettingsApi.addApplianceType(name),
+    onSuccess: (updated, savedName) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      if (addingTypeForIndex !== null) {
+        updateItem(addingTypeForIndex, { applianceType: savedName.trim(), customType: '' });
+      }
+      setNewApplianceTypeInput('');
+      setAddingTypeForIndex(null);
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao adicionar tipo' : 'Could not add type',
+        err instanceof ApiError ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const handleSaveNewApplianceType = () => {
+    const trimmed = newApplianceTypeInput.trim();
+    if (!trimmed) return;
+    addApplianceTypeMutation.mutate(trimmed);
+  };
 
   const customersQuery = useQuery({
     queryKey: ['customers', customerSearch.trim()],
@@ -166,6 +218,7 @@ export default function NewOrderScreen() {
     onSuccess: (createdOrder) => {
       void queryClient.invalidateQueries({ queryKey: ['bench-queue'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['orders-list'] });
 
       const tagsList = createdOrder.items.map((i) => `#${i.tag}`).join(', ');
       Alert.alert(
@@ -173,13 +226,26 @@ export default function NewOrderScreen() {
           ? `OS #${createdOrder.orderNumber} aberta!`
           : `Order #${createdOrder.orderNumber} created!`,
         locale === 'pt-BR'
-          ? `Etiquetas físicas geradas: ${tagsList}`
-          : `Generated bench tags: ${tagsList}`,
+          ? `Etiquetas físicas geradas: ${tagsList}\n\nDeseja enviar o comprovante com todos os aparelhos no WhatsApp?`
+          : `Generated bench tags: ${tagsList}\n\nSend the intake receipt via WhatsApp?`,
         [
           {
-            text: 'OK',
+            text: locale === 'pt-BR' ? 'Ir para Bancada' : 'Go to Bench',
+            style: 'cancel',
             onPress: () => {
               router.replace('/(tabs)/workbench');
+            },
+          },
+          {
+            text: locale === 'pt-BR' ? 'Enviar WhatsApp' : 'Send WhatsApp',
+            onPress: () => {
+              void ordersApi
+                .getOrderWhatsappLink(createdOrder.id, 'INTAKE')
+                .then((res) => Linking.openURL(res.whatsappUrl))
+                .catch(() => {})
+                .finally(() => {
+                  router.replace('/(tabs)/workbench');
+                });
             },
           },
         ]
@@ -491,15 +557,71 @@ export default function NewOrderScreen() {
 
                 {/* Appliance Type Quick Chips */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.monoLabel}>
-                    {locale === 'pt-BR' ? 'Tipo de aparelho' : 'Appliance type'}
-                  </Text>
+                  <View style={styles.labelRowBetween}>
+                    <Text style={styles.monoLabel}>
+                      {locale === 'pt-BR' ? 'Tipo de aparelho' : 'Appliance type'}
+                    </Text>
+                    <Pressable
+                      onPress={() => {
+                        setAddingTypeForIndex((prev) => (prev === index ? null : index));
+                        setNewApplianceTypeInput('');
+                      }}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.addTypeLink}>
+                        {addingTypeForIndex === index
+                          ? t.common.cancel
+                          : locale === 'pt-BR'
+                            ? '+ Novo tipo'
+                            : '+ New type'}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {addingTypeForIndex === index ? (
+                    <View style={styles.addTypeRow}>
+                      <TextInput
+                        value={newApplianceTypeInput}
+                        onChangeText={setNewApplianceTypeInput}
+                        placeholder={
+                          locale === 'pt-BR'
+                            ? 'Ex: Máquina de Café, Parafusadeira...'
+                            : 'e.g. Espresso Machine...'
+                        }
+                        placeholderTextColor={colors.textMuted}
+                        style={[styles.filledInput, styles.addTypeInput]}
+                        returnKeyType="done"
+                        onSubmitEditing={handleSaveNewApplianceType}
+                      />
+                      <Pressable
+                        disabled={
+                          addApplianceTypeMutation.isPending || !newApplianceTypeInput.trim()
+                        }
+                        onPress={handleSaveNewApplianceType}
+                        style={[
+                          styles.addTypeSaveBtn,
+                          (!newApplianceTypeInput.trim() ||
+                            addApplianceTypeMutation.isPending) &&
+                            styles.addTypeSaveBtnDisabled,
+                        ]}
+                      >
+                        {addApplianceTypeMutation.isPending ? (
+                          <ActivityIndicator size="small" color={colors.textOnDark} />
+                        ) : (
+                          <Text style={styles.addTypeSaveText}>
+                            {locale === 'pt-BR' ? 'Adicionar' : 'Add'}
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  ) : null}
+
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.typeChipsRow}
                   >
-                    {QUICK_APPLIANCE_TYPES.map((typeOption) => {
+                    {applianceTypeOptions.map((typeOption) => {
                       const active = item.applianceType === typeOption;
                       return (
                         <Pressable
@@ -964,6 +1086,36 @@ const styles = StyleSheet.create({
   },
   typeChipsRow: {
     gap: 8,
+  },
+  addTypeLink: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.brandPrimary,
+  },
+  addTypeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  addTypeInput: {
+    flex: 1,
+  },
+  addTypeSaveBtn: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addTypeSaveBtnDisabled: {
+    opacity: 0.5,
+  },
+  addTypeSaveText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: colors.textOnDark,
   },
   typeChip: {
     paddingHorizontal: 12,

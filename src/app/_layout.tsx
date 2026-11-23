@@ -43,9 +43,8 @@ function RootNavigator() {
   useEffect(() => {
     if (isHydrating) return;
     const inAuthGroup = segments[0] === '(auth)';
-    const inPublicTrack = segments[0] === 'track';
 
-    if (!isAuthenticated && !inAuthGroup && !inPublicTrack) {
+    if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (isAuthenticated && inAuthGroup) {
       router.replace('/(tabs)/workbench');
@@ -78,7 +77,6 @@ function RootNavigator() {
         name="orders/[orderId]/items/[itemId]/deliver"
         options={{ presentation: 'modal' }}
       />
-      <Stack.Screen name="track/[publicToken]" />
     </Stack>
   );
 }
