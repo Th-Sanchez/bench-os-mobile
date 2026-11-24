@@ -45,6 +45,23 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 140
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#2563EB",
+          "defaultChannel": "benchos-alerts"
+        }
+      ],
+      "./plugins/withGoogleServicesEnv",
+      [
+        "./plugins/withSentrySafeUpload",
+        {
+          "url": "https://sentry.io/",
+          "organization": "benchos-xi",
+          "project": "benchos-mobile"
+        }
       ]
     ],
     "experiments": {

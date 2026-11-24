@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { File, UploadTask, UploadType } from 'expo-file-system';
+import { addApiBreadcrumb, captureApiError } from '@/observability/sentry';
 import type { ProblemDetail } from '@/types/api';
 
 const DEFAULT_API_URL = 'http://localhost:8080';
@@ -9,12 +10,14 @@ export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL)
 export class ApiError extends Error {
   readonly status: number;
   readonly problem?: ProblemDetail;
+  readonly requestId?: string;
 
-  constructor(status: number, message: string, problem?: ProblemDetail) {
+  constructor(status: number, message: string, problem?: ProblemDetail, requestId?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.problem = problem;
+    this.requestId = requestId ?? problem?.requestId;
   }
 }
 
@@ -55,6 +58,8 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, query, skipAuth = false } = options;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const startedAt = Date.now();
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -68,13 +73,39 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers.Authorization = `Bearer ${accessTokenRef}`;
   }
 
-  const response = await fetch(buildUrl(path, query), {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(normalizedPath, query), {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (networkError) {
+    addApiBreadcrumb({
+      method,
+      path: normalizedPath,
+      durationMs: Date.now() - startedAt,
+      ok: false,
+    });
+    captureApiError(networkError, {
+      method,
+      path: normalizedPath,
+      stage: 'api',
+    });
+    throw networkError;
+  }
+
+  const headerRequestId = response.headers.get('X-Request-Id') ?? undefined;
 
   if (response.status === 204) {
+    addApiBreadcrumb({
+      method,
+      path: normalizedPath,
+      status: 204,
+      durationMs: Date.now() - startedAt,
+      requestId: headerRequestId,
+      ok: true,
+    });
     return undefined as T;
   }
 
@@ -90,14 +121,41 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   if (!response.ok) {
     const problem = (parsed && typeof parsed === 'object' ? parsed : undefined) as ProblemDetail | undefined;
+    const requestId = headerRequestId ?? problem?.requestId;
     const message = problem?.detail || problem?.title || `Request failed with status ${response.status}`;
+
+    addApiBreadcrumb({
+      method,
+      path: normalizedPath,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      requestId,
+      ok: false,
+    });
 
     if (response.status === 401 && !skipAuth && unauthorizedHandler) {
       unauthorizedHandler();
     }
 
-    throw new ApiError(response.status, message, problem);
+    const apiError = new ApiError(response.status, message, problem, requestId);
+    captureApiError(apiError, {
+      method,
+      path: normalizedPath,
+      status: response.status,
+      requestId,
+      stage: 'api',
+    });
+    throw apiError;
   }
+
+  addApiBreadcrumb({
+    method,
+    path: normalizedPath,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+    requestId: headerRequestId,
+    ok: true,
+  });
 
   return parsed as T;
 }
@@ -113,50 +171,85 @@ export async function uploadFileToPresignedUrl(
   fileUri: string,
   contentType: string
 ): Promise<void> {
-  if (Platform.OS !== 'web') {
-    const file = new File(fileUri);
-    const task = new UploadTask(file, uploadUrl, {
-      httpMethod: 'PUT',
-      uploadType: UploadType.BINARY_CONTENT,
+  const startedAt = Date.now();
+
+  try {
+    if (Platform.OS !== 'web') {
+      const file = new File(fileUri);
+      const task = new UploadTask(file, uploadUrl, {
+        httpMethod: 'PUT',
+        uploadType: UploadType.BINARY_CONTENT,
+        headers: {
+          'Content-Type': contentType,
+        },
+        mimeType: contentType,
+      });
+
+      const result = await task.uploadAsync();
+      if (result.status < 200 || result.status >= 300) {
+        throw new ApiError(
+          result.status,
+          result.body
+            ? `Failed to upload image (${result.status}): ${result.body.slice(0, 120)}`
+            : `Failed to upload image to object storage (${result.status})`
+        );
+      }
+      addApiBreadcrumb({
+        method: 'PUT',
+        path: 'object-storage/presigned-upload',
+        status: result.status,
+        durationMs: Date.now() - startedAt,
+        ok: true,
+      });
+      return;
+    }
+
+    const fileResponse = await fetch(fileUri);
+    if (!fileResponse.ok) {
+      throw new ApiError(fileResponse.status, 'Failed to read local image before upload');
+    }
+    const blob = await fileResponse.blob();
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
       headers: {
         'Content-Type': contentType,
       },
-      mimeType: contentType,
+      body: blob,
     });
 
-    const result = await task.uploadAsync();
-    if (result.status < 200 || result.status >= 300) {
+    if (!uploadResponse.ok) {
+      const details = await uploadResponse.text().catch(() => '');
       throw new ApiError(
-        result.status,
-        result.body
-          ? `Failed to upload image (${result.status}): ${result.body.slice(0, 120)}`
-          : `Failed to upload image to object storage (${result.status})`
+        uploadResponse.status,
+        details
+          ? `Failed to upload image (${uploadResponse.status}): ${details.slice(0, 120)}`
+          : `Failed to upload image to object storage (${uploadResponse.status})`
       );
     }
-    return;
-  }
 
-  const fileResponse = await fetch(fileUri);
-  if (!fileResponse.ok) {
-    throw new ApiError(fileResponse.status, 'Failed to read local image before upload');
-  }
-  const blob = await fileResponse.blob();
-
-  const uploadResponse = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-    },
-    body: blob,
-  });
-
-  if (!uploadResponse.ok) {
-    const details = await uploadResponse.text().catch(() => '');
-    throw new ApiError(
-      uploadResponse.status,
-      details
-        ? `Failed to upload image (${uploadResponse.status}): ${details.slice(0, 120)}`
-        : `Failed to upload image to object storage (${uploadResponse.status})`
-    );
+    addApiBreadcrumb({
+      method: 'PUT',
+      path: 'object-storage/presigned-upload',
+      status: uploadResponse.status,
+      durationMs: Date.now() - startedAt,
+      ok: true,
+    });
+  } catch (uploadError) {
+    const status = uploadError instanceof ApiError ? uploadError.status : undefined;
+    addApiBreadcrumb({
+      method: 'PUT',
+      path: 'object-storage/presigned-upload',
+      status,
+      durationMs: Date.now() - startedAt,
+      ok: false,
+    });
+    captureApiError(uploadError, {
+      method: 'PUT',
+      path: 'object-storage/presigned-upload',
+      status,
+      stage: 'storage_upload',
+    });
+    throw uploadError;
   }
 }

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -30,6 +31,8 @@ import { ResetMemberPasswordModal } from '@/components/settings/ResetMemberPassw
 import { TeamMemberModal } from '@/components/settings/TeamMemberModal';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePushNotifications } from '@/notifications/PushNotificationsContext';
+import { getAppVersionLabel, isSentryConfigured } from '@/observability/sentry';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type {
   Role,
@@ -102,6 +105,11 @@ export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const { session, isOwner, signOut } = useAuth();
   const { locale, setLocale, t } = useI18n();
+  const {
+    status: pushStatus,
+    isBusy: isPushBusy,
+    enableNotifications,
+  } = usePushNotifications();
 
   const [laborCostDraft, setLaborCostDraft] = useState<string | null>(null);
   const [estimatedDaysDraft, setEstimatedDaysDraft] = useState<string | null>(null);
@@ -801,6 +809,69 @@ export default function SettingsScreen() {
           <View style={styles.langRow}>
             <View style={styles.langCopy}>
               <Text style={styles.langTitle}>
+                {locale === 'pt-BR' ? 'Notificações push' : 'Push notifications'}
+              </Text>
+              <Text style={styles.langSubtitle}>
+                {pushStatus === 'registered'
+                  ? locale === 'pt-BR'
+                    ? 'Ativas: orçamentos no /track e alertas diários'
+                    : 'Active: quote approvals and daily alerts'
+                  : pushStatus === 'denied'
+                    ? locale === 'pt-BR'
+                      ? 'Permissão negada no sistema'
+                      : 'System permission denied'
+                    : pushStatus === 'unsupported'
+                      ? locale === 'pt-BR'
+                        ? 'Disponível no app instalado (APK)'
+                        : 'Available in installed app build'
+                      : locale === 'pt-BR'
+                        ? 'Receba alertas de aprovação e vencimentos'
+                        : 'Receive quote and due-date alerts'}
+              </Text>
+            </View>
+
+            {pushStatus === 'registered' ? (
+              <View style={styles.activePill}>
+                <View style={styles.activeDot} />
+                <Text style={styles.activePillText}>
+                  {locale === 'pt-BR' ? 'Ativo' : 'Active'}
+                </Text>
+              </View>
+            ) : pushStatus === 'denied' ? (
+              <Pressable
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+                style={styles.pushActionBtn}
+              >
+                <Text style={styles.pushActionBtnText}>
+                  {locale === 'pt-BR' ? 'Ajustes' : 'Settings'}
+                </Text>
+              </Pressable>
+            ) : pushStatus !== 'unsupported' ? (
+              <Pressable
+                disabled={isPushBusy}
+                onPress={() => {
+                  void enableNotifications();
+                }}
+                style={[styles.pushActionBtn, isPushBusy && styles.addCustomBtnDisabled]}
+              >
+                {isPushBusy ? (
+                  <ActivityIndicator size="small" color={colors.brandPrimary} />
+                ) : (
+                  <Text style={styles.pushActionBtnText}>
+                    {locale === 'pt-BR' ? 'Ativar' : 'Enable'}
+                  </Text>
+                )}
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={styles.logoutDivider} />
+
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <Text style={styles.langTitle}>
                 {locale === 'pt-BR' ? 'Idioma do aplicativo' : 'App language'}
               </Text>
               <Text style={styles.langSubtitle}>
@@ -854,6 +925,16 @@ export default function SettingsScreen() {
             icon={<LogOut size={16} color={colors.danger} strokeWidth={2.2} />}
             onPress={handleSignOut}
           />
+
+          <Text style={styles.appVersionFooter}>
+            {`BenchOS ${getAppVersionLabel()}${
+              isSentryConfigured()
+                ? locale === 'pt-BR'
+                  ? ' · Monitoramento ativo'
+                  : ' · Monitoring active'
+                : ''
+            }`}
+          </Text>
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
@@ -1350,5 +1431,27 @@ const styles = StyleSheet.create({
   logoutDivider: {
     height: 1,
     backgroundColor: colors.bgSubtle,
+  },
+  pushActionBtn: {
+    backgroundColor: colors.brandPrimarySoft,
+    borderWidth: 1,
+    borderColor: colors.brandPrimaryBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minWidth: 74,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pushActionBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.brandPrimary,
+  },
+  appVersionFooter: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });

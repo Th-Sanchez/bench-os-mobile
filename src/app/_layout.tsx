@@ -21,10 +21,21 @@ import {
   JetBrainsMono_700Bold,
 } from '@expo-google-fonts/jetbrains-mono';
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
+import { AppErrorFallback } from '@/components/ui/AppErrorFallback';
 import { I18nProvider } from '@/i18n/I18nProvider';
+import { PushNotificationsProvider } from '@/notifications/PushNotificationsContext';
+import {
+  captureHandledException,
+  initSentry,
+  wrapRootComponent,
+  wrapRouterErrorBoundary,
+} from '@/observability/sentry';
 import { colors } from '@/theme/tokens';
 
+initSentry();
 void SplashScreen.preventAutoHideAsync();
+
+export const ErrorBoundary = wrapRouterErrorBoundary(AppErrorFallback);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,7 +92,7 @@ function RootNavigator() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
@@ -94,6 +105,9 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    if (fontError) {
+      captureHandledException(fontError, { 'error.source': 'font_loading' });
+    }
     if (fontsLoaded || fontError) {
       void SplashScreen.hideAsync();
     }
@@ -108,11 +122,15 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <I18nProvider>
           <AuthProvider>
-            <StatusBar style="dark" />
-            <RootNavigator />
+            <PushNotificationsProvider>
+              <StatusBar style="dark" />
+              <RootNavigator />
+            </PushNotificationsProvider>
           </AuthProvider>
         </I18nProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
   );
 }
+
+export default wrapRootComponent(RootLayout);

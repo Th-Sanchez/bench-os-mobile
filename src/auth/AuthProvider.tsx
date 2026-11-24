@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { authApi } from '@/api/endpoints';
 import { setApiAccessToken, setUnauthorizedHandler } from '@/api/http';
+import { unregisterCurrentDevicePushToken } from '@/notifications/pushNotifications';
+import { captureHandledException, setSentryUserContext } from '@/observability/sentry';
 import type {
   AuthResponse,
   LoginRequest,
@@ -47,12 +49,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tenant: auth.tenant,
     };
     setApiAccessToken(next.accessToken);
+    setSentryUserContext({
+      userId: next.user.id,
+      role: next.user.role,
+      tenantId: next.tenant.id,
+      tenantName: next.tenant.name,
+    });
     setSession(next);
     await saveSessionJson(JSON.stringify(next));
   }, []);
 
   const signOut = useCallback(async () => {
+    await unregisterCurrentDevicePushToken();
     setApiAccessToken(null);
+    setSentryUserContext(null);
     setSession(null);
     await clearSessionJson();
   }, []);
@@ -73,12 +83,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const parsed = JSON.parse(raw) as AuthSession;
           if (parsed?.accessToken && !isSessionExpired(parsed.expiresAt)) {
             setApiAccessToken(parsed.accessToken);
+            setSentryUserContext({
+              userId: parsed.user.id,
+              role: parsed.user.role,
+              tenantId: parsed.tenant.id,
+              tenantName: parsed.tenant.name,
+            });
             setSession(parsed);
           } else {
+            setSentryUserContext(null);
             await clearSessionJson();
           }
         }
-      } catch {
+      } catch (err) {
+        captureHandledException(err, { 'error.source': 'session_hydration' });
+        setSentryUserContext(null);
         await clearSessionJson();
       } finally {
         if (active) setIsHydrating(false);
