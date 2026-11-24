@@ -87,6 +87,20 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  code: string;
+  newPassword: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
 export interface RegisterTenantRequest {
   shopName: string;
   document: string;
@@ -101,6 +115,10 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   role: Role;
+}
+
+export interface ResetUserPasswordRequest {
+  newPassword: string;
 }
 
 export interface TenantSettingsResponse {

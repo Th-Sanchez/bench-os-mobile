@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   Info,
+  KeyRound,
   LogOut,
   Plus,
   Settings,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react-native';
 import { tenantSettingsApi, usersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
+import { ResetMemberPasswordModal } from '@/components/settings/ResetMemberPasswordModal';
 import { TeamMemberModal } from '@/components/settings/TeamMemberModal';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -116,6 +118,7 @@ export default function SettingsScreen() {
     text: string;
   } | null>(null);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [resetPasswordMember, setResetPasswordMember] = useState<UserResponse | null>(null);
 
   const settingsQuery = useQuery({
     queryKey: ['tenant-settings'],
@@ -717,21 +720,36 @@ export default function SettingsScreen() {
                       </View>
 
                       {canToggle ? (
-                        <Switch
-                          value={member.active}
-                          disabled={toggleUserStatusMutation.isPending}
-                          onValueChange={(nextValue) =>
-                            toggleUserStatusMutation.mutate({
-                              id: member.id,
-                              active: nextValue,
-                            })
-                          }
-                          trackColor={{
-                            false: colors.borderStrong,
-                            true: colors.brandPrimary,
-                          }}
-                          thumbColor={colors.bgSurface}
-                        />
+                        <View style={styles.memberActions}>
+                          <Pressable
+                            onPress={() => setResetPasswordMember(member)}
+                            hitSlop={6}
+                            accessibilityLabel={
+                              locale === 'pt-BR' ? 'Redefinir senha' : 'Reset password'
+                            }
+                            style={({ pressed }) => [
+                              styles.resetPwdBtn,
+                              pressed && styles.resetPwdBtnPressed,
+                            ]}
+                          >
+                            <KeyRound size={15} color={colors.brandPrimary} />
+                          </Pressable>
+                          <Switch
+                            value={member.active}
+                            disabled={toggleUserStatusMutation.isPending}
+                            onValueChange={(nextValue) =>
+                              toggleUserStatusMutation.mutate({
+                                id: member.id,
+                                active: nextValue,
+                              })
+                            }
+                            trackColor={{
+                              false: colors.borderStrong,
+                              true: colors.brandPrimary,
+                            }}
+                            thumbColor={colors.bgSurface}
+                          />
+                        </View>
                       ) : (
                         <View style={styles.activePill}>
                           <View style={styles.activeDot} />
@@ -841,10 +859,17 @@ export default function SettingsScreen() {
       </KeyboardAvoidingView>
 
       {isOwner ? (
-        <TeamMemberModal
-          visible={memberModalOpen}
-          onClose={() => setMemberModalOpen(false)}
-        />
+        <>
+          <TeamMemberModal
+            visible={memberModalOpen}
+            onClose={() => setMemberModalOpen(false)}
+          />
+          <ResetMemberPasswordModal
+            visible={resetPasswordMember !== null}
+            member={resetPasswordMember}
+            onClose={() => setResetPasswordMember(null)}
+          />
+        </>
       ) : null}
     </SafeAreaView>
   );
@@ -1154,6 +1179,24 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
     minWidth: 0,
+  },
+  memberActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  resetPwdBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimarySoft,
+    borderWidth: 1,
+    borderColor: colors.brandPrimaryBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetPwdBtnPressed: {
+    opacity: 0.75,
   },
   avatar: {
     width: 34,

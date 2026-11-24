@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
@@ -23,6 +22,7 @@ import {
 } from 'lucide-react-native';
 import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
+import { ForgotPasswordModal } from '@/components/auth/ForgotPasswordModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TextField } from '@/components/ui/TextField';
@@ -40,6 +40,8 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [forgotModalOpen, setForgotModalOpen] = useState(false);
 
   // Login & shared fields
   const [email, setEmail] = useState('');
@@ -54,10 +56,12 @@ export default function LoginScreen() {
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setErrorMessage(null);
+    setSuccessMessage(null);
   };
 
   const handleSubmit = async () => {
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     if (!email.trim() || !password.trim()) {
       setErrorMessage(
@@ -128,11 +132,20 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    Alert.alert(
-      locale === 'pt-BR' ? 'Recuperação de senha' : 'Password recovery',
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setForgotModalOpen(true);
+  };
+
+  const handlePasswordResetSuccess = (resetEmail: string) => {
+    setForgotModalOpen(false);
+    setMode('login');
+    setEmail(resetEmail);
+    setPassword('');
+    setSuccessMessage(
       locale === 'pt-BR'
-        ? 'Peça ao dono da oficina para redefinir seu acesso ou entre em contato com o suporte BenchOS.'
-        : 'Ask your shop owner to reset your access or contact BenchOS support.'
+        ? 'Senha redefinida com sucesso! Entre com sua nova senha.'
+        : 'Password reset successfully! Sign in with your new password.'
     );
   };
 
@@ -187,6 +200,12 @@ export default function LoginScreen() {
                 {mode === 'login' ? t.auth.loginSubtitle : t.auth.registerSubtitle}
               </Text>
             </View>
+
+            {successMessage ? (
+              <View style={styles.successBanner}>
+                <Text style={styles.successBannerText}>{successMessage}</Text>
+              </View>
+            ) : null}
 
             {errorMessage ? (
               <View style={styles.errorBanner}>
@@ -308,6 +327,13 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ForgotPasswordModal
+        visible={forgotModalOpen}
+        initialEmail={email}
+        onClose={() => setForgotModalOpen(false)}
+        onSuccess={handlePasswordResetSuccess}
+      />
     </SafeAreaView>
   );
 }
@@ -412,6 +438,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyRegular,
     fontSize: 12,
     color: colors.textMuted,
+  },
+  successBanner: {
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  successBannerText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.successDark,
   },
   errorBanner: {
     backgroundColor: colors.dangerSoft,

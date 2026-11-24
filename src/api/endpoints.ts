@@ -8,9 +8,11 @@ import type {
   DeliverItemRequest,
   FinancialSummaryResponse,
   FinancialTransactionResponse,
+  ForgotPasswordRequest,
   ItemPhotoResponse,
   ItemStatus,
   LoginRequest,
+  MessageResponse,
   OrderItemQueueResponse,
   PageResponse,
   PresignPhotoUploadRequest,
@@ -18,6 +20,7 @@ import type {
   PublicOrderResponse,
   RegisterItemPhotoRequest,
   RegisterTenantRequest,
+  ResetPasswordRequest,
   ServiceOrderItemResponse,
   ServiceOrderResponse,
   SupplierResponse,
@@ -50,6 +53,20 @@ export const authApi = {
       body: payload,
       skipAuth: true,
     }),
+
+  forgotPassword: (payload: ForgotPasswordRequest) =>
+    apiRequest<MessageResponse>('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: payload,
+      skipAuth: true,
+    }),
+
+  resetPassword: (payload: ResetPasswordRequest) =>
+    apiRequest<MessageResponse>('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: payload,
+      skipAuth: true,
+    }),
 };
 
 export const usersApi = {
@@ -59,6 +76,11 @@ export const usersApi = {
     apiRequest<UserResponse>('/api/v1/users', { method: 'POST', body: payload }),
   updateStatus: (id: string, active: boolean) =>
     apiRequest<UserResponse>(`/api/v1/users/${id}/status`, { method: 'PATCH', body: { active } }),
+  resetPassword: (id: string, newPassword: string) =>
+    apiRequest<UserResponse>(`/api/v1/users/${id}/password`, {
+      method: 'PATCH',
+      body: { newPassword },
+    }),
 };
 
 export const tenantSettingsApi = {
