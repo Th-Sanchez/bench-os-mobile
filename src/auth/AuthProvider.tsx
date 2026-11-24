@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { authApi } from '@/api/endpoints';
 import { setApiAccessToken, setUnauthorizedHandler } from '@/api/http';
+import { unregisterCurrentDevicePushToken } from '@/notifications/pushNotifications';
 import { captureHandledException, setSentryUserContext } from '@/observability/sentry';
 import type {
   AuthResponse,
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    await unregisterCurrentDevicePushToken();
     setApiAccessToken(null);
     setSentryUserContext(null);
     setSession(null);

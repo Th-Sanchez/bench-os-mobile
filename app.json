@@ -47,6 +47,15 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#2563EB",
+          "defaultChannel": "benchos-alerts"
+        }
+      ],
+      "./plugins/withGoogleServicesEnv",
+      [
         "./plugins/withSentrySafeUpload",
         {
           "url": "https://sentry.io/",

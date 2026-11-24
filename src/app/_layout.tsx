@@ -23,6 +23,7 @@ import {
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { AppErrorFallback } from '@/components/ui/AppErrorFallback';
 import { I18nProvider } from '@/i18n/I18nProvider';
+import { PushNotificationsProvider } from '@/notifications/PushNotificationsContext';
 import {
   captureHandledException,
   initSentry,
@@ -121,8 +122,10 @@ function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <I18nProvider>
           <AuthProvider>
-            <StatusBar style="dark" />
-            <RootNavigator />
+            <PushNotificationsProvider>
+              <StatusBar style="dark" />
+              <RootNavigator />
+            </PushNotificationsProvider>
           </AuthProvider>
         </I18nProvider>
       </QueryClientProvider>

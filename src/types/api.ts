@@ -1,5 +1,7 @@
 export type Role = 'OWNER' | 'ATTENDANT' | 'TECHNICIAN';
 
+export type DevicePlatform = 'ANDROID' | 'IOS' | 'WEB';
+
 export type Voltage = 'V110' | 'V220' | 'BIVOLT' | 'BATTERY' | 'UNKNOWN';
 
 export type ItemStatus =
@@ -120,6 +122,20 @@ export interface CreateUserRequest {
 
 export interface ResetUserPasswordRequest {
   newPassword: string;
+}
+
+export interface RegisterPushTokenRequest {
+  expoPushToken: string;
+  platform: DevicePlatform;
+  deviceName?: string;
+}
+
+export interface PushTokenResponse {
+  id: string;
+  expoPushToken: string;
+  platform: DevicePlatform;
+  deviceName: string | null;
+  updatedAt: string;
 }
 
 export interface TenantSettingsResponse {

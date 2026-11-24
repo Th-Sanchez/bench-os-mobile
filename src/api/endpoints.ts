@@ -18,7 +18,9 @@ import type {
   PresignPhotoUploadRequest,
   PresignPhotoUploadResponse,
   PublicOrderResponse,
+  PushTokenResponse,
   RegisterItemPhotoRequest,
+  RegisterPushTokenRequest,
   RegisterTenantRequest,
   ResetPasswordRequest,
   ServiceOrderItemResponse,
@@ -80,6 +82,16 @@ export const usersApi = {
     apiRequest<UserResponse>(`/api/v1/users/${id}/password`, {
       method: 'PATCH',
       body: { newPassword },
+    }),
+  registerPushToken: (payload: RegisterPushTokenRequest) =>
+    apiRequest<PushTokenResponse>('/api/v1/users/me/push-tokens', {
+      method: 'POST',
+      body: payload,
+    }),
+  unregisterPushToken: (token: string) =>
+    apiRequest<void>('/api/v1/users/me/push-tokens', {
+      method: 'DELETE',
+      query: { token },
     }),
 };
 
