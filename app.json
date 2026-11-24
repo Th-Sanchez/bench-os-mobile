@@ -62,7 +62,8 @@
           "organization": "benchos-xi",
           "project": "benchos-mobile"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

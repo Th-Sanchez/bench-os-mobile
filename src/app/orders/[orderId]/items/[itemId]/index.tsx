@@ -24,6 +24,7 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
+  FileText,
   Lock,
   MessageCircle,
   MoreVertical,
@@ -33,7 +34,7 @@ import {
   User,
   X,
 } from 'lucide-react-native';
-import { ordersApi, photosApi } from '@/api/endpoints';
+import { financeApi, ordersApi, photosApi } from '@/api/endpoints';
 import { API_BASE_URL, ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
@@ -49,6 +50,12 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ItemPhotoResponse, ItemStatus, PhotoStage } from '@/types/api';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
+import {
+  computeWarrantyInfo,
+  formatDateTime,
+  formatFullDate,
+  generateAndShareWarrantyReceiptPdf,
+} from '@/utils/warrantyReceiptPdf';
 
 const PROGRESS_STEPS: { labelPt: string; labelEn: string }[] = [
   { labelPt: 'Recebido', labelEn: 'Received' },
@@ -93,6 +100,7 @@ export default function ApplianceDetailScreen() {
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [sharingPdf, setSharingPdf] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [previewPhoto, setPreviewPhoto] = useState<ItemPhotoResponse | null>(null);
@@ -114,6 +122,12 @@ export default function ApplianceDetailScreen() {
     () => order?.items.find((i) => i.id === itemId),
     [order, itemId]
   );
+
+  const itemPaymentsQuery = useQuery({
+    queryKey: ['item-payments', itemId],
+    queryFn: () => financeApi.listItemPayments(itemId),
+    enabled: Boolean(itemId) && item?.status === 'DELIVERED',
+  });
 
   const photosByStage = useMemo(() => {
     const grouped: Record<PhotoStage, ItemPhotoResponse[]> = {
@@ -202,6 +216,31 @@ export default function ApplianceDetailScreen() {
 
   const openPublicTrackingWeb = (publicToken: string) => {
     void Linking.openURL(`${API_BASE_URL}/track/${publicToken}`);
+  };
+
+  const handleShareWarrantyPdf = async () => {
+    if (!order || !item || !session?.tenant) return;
+    setSharingPdf(true);
+    try {
+      const payments = (itemPaymentsQuery.data ?? []).map((p) => ({
+        paymentMethod: p.paymentMethod,
+        amount: Number(p.amount) || 0,
+      }));
+      await generateAndShareWarrantyReceiptPdf({
+        tenant: session.tenant,
+        order,
+        item,
+        payments,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao gerar comprovante' : 'Could not generate receipt',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    } finally {
+      setSharingPdf(false);
+    }
   };
 
   const handleOverflowMenu = () => {
@@ -404,6 +443,16 @@ export default function ApplianceDetailScreen() {
                 params: { orderId, itemId },
               })
             }
+            style={styles.primaryBarBtn}
+          />
+        );
+      case 'DELIVERED':
+        return (
+          <Button
+            label={locale === 'pt-BR' ? 'Comprovante PDF' : 'Receipt PDF'}
+            loading={sharingPdf}
+            icon={<FileText size={17} color={colors.textOnDark} />}
+            onPress={() => void handleShareWarrantyPdf()}
             style={styles.primaryBarBtn}
           />
         );
@@ -736,6 +785,119 @@ export default function ApplianceDetailScreen() {
             ) : null}
           </View>
         </Card>
+
+        {/* Delivered Warranty & Receipt Card */}
+        {item.status === 'DELIVERED' ? (() => {
+          const warranty = computeWarrantyInfo(item);
+          const payments = itemPaymentsQuery.data ?? [];
+          return (
+            <Card
+              accentBorderColor={
+                warranty.hasWarranty
+                  ? warranty.isActive
+                    ? colors.successBorder
+                    : colors.dangerBorder
+                  : colors.borderSubtle
+              }
+              style={styles.warrantyCard}
+            >
+              <View style={styles.sectionHeaderBetween}>
+                <View style={styles.warrantyCardHeaderLeft}>
+                  <ShieldCheck
+                    size={16}
+                    color={
+                      warranty.hasWarranty
+                        ? warranty.isActive
+                          ? colors.successDark
+                          : colors.danger
+                        : colors.textSecondary
+                    }
+                  />
+                  <Text style={styles.cardSectionTitle}>
+                    {locale === 'pt-BR' ? 'Entrega & Garantia' : 'Delivery & Warranty'}
+                  </Text>
+                </View>
+
+                {warranty.hasWarranty ? (
+                  <View
+                    style={[
+                      styles.warrantyStatusPill,
+                      warranty.isActive
+                        ? styles.warrantyStatusActive
+                        : styles.warrantyStatusExpired,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.warrantyStatusText,
+                        warranty.isActive
+                          ? styles.warrantyStatusTextActive
+                          : styles.warrantyStatusTextExpired,
+                      ]}
+                    >
+                      {warranty.isActive
+                        ? locale === 'pt-BR'
+                          ? `${warranty.daysRemaining}d restantes`
+                          : `${warranty.daysRemaining}d left`
+                        : locale === 'pt-BR'
+                          ? 'Expirada'
+                          : 'Expired'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.priceRows}>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>
+                    {locale === 'pt-BR' ? 'Entregue em' : 'Delivered on'}
+                  </Text>
+                  <Text style={styles.priceValue}>
+                    {formatDateTime(warranty.deliveredDate, locale)}
+                  </Text>
+                </View>
+                {warranty.hasWarranty && warranty.expiryDate ? (
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>
+                      {locale === 'pt-BR' ? 'Garantia válida até' : 'Warranty valid until'}
+                    </Text>
+                    <Text style={styles.warrantyExpiryValue}>
+                      {formatFullDate(warranty.expiryDate, locale)}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>
+                      {locale === 'pt-BR' ? 'Cobertura' : 'Coverage'}
+                    </Text>
+                    <Text style={styles.priceValue}>
+                      {locale === 'pt-BR' ? 'Devolução sem garantia' : 'No warranty'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {payments.length > 0 ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.priceRows}>
+                    <Text style={styles.sectionOverline}>
+                      {locale === 'pt-BR' ? 'PAGAMENTO CONFIRMADO' : 'CONFIRMED PAYMENT'}
+                    </Text>
+                    {payments.map((part, idx) => (
+                      <View key={`${part.paymentMethod}-${idx}`} style={styles.priceRow}>
+                        <Text style={styles.priceLabel}>
+                          {t.paymentMethod[part.paymentMethod]}
+                        </Text>
+                        <Text style={styles.priceValue}>{formatCurrency(part.amount)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            </Card>
+          );
+        })() : null}
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
@@ -1342,5 +1504,42 @@ const styles = StyleSheet.create({
   photoViewerImage: {
     flex: 1,
     width: '100%',
+  },
+  warrantyCard: {
+    gap: 10,
+  },
+  warrantyCardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  warrantyStatusPill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  warrantyStatusActive: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.successBorder,
+  },
+  warrantyStatusExpired: {
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.dangerBorder,
+  },
+  warrantyStatusText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+  },
+  warrantyStatusTextActive: {
+    color: colors.successDark,
+  },
+  warrantyStatusTextExpired: {
+    color: colors.dangerDark,
+  },
+  warrantyExpiryValue: {
+    fontFamily: fonts.monoBold,
+    fontSize: 13,
+    color: colors.infoDark,
   },
 });

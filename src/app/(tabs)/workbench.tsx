@@ -13,9 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, Plus, Search, User, Wrench, X } from 'lucide-react-native';
+import { Archive, Bell, ChevronRight, Plus, Search, User, Wrench, X } from 'lucide-react-native';
 import { ordersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
+import { getWaitingDays } from '@/utils/staleItems';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TagBadge } from '@/components/ui/TagBadge';
@@ -89,10 +90,23 @@ export default function WorkbenchScreen() {
       }),
   });
 
+  const abandonmentSummaryQuery = useQuery({
+    queryKey: ['abandonment-eligible-summary'],
+    queryFn: () => ordersApi.listAbandonmentEligible({ page: 0, size: 1 }),
+  });
+
   const allItems = useMemo(
     () => queueQuery.data?.content ?? [],
     [queueQuery.data]
   );
+
+  const eligibleDiscardCount = abandonmentSummaryQuery.data?.totalElements ?? 0;
+  const staleOver30Count = useMemo(() => {
+    return allItems.filter(
+      (item) => item.status === 'READY_FOR_PICKUP' && getWaitingDays(item) >= 30
+    ).length;
+  }, [allItems]);
+  const staleAlertCount = Math.max(eligibleDiscardCount, staleOver30Count);
 
   const countsByStatus = useMemo(() => {
     const counts: Record<string, number> = { ALL: allItems.length };
@@ -198,7 +212,33 @@ export default function WorkbenchScreen() {
         <Text style={styles.topBarTitle}>{t.tabs.workbench}</Text>
         <View style={styles.topBarActions}>
           <Pressable
-            onPress={() => queueQuery.refetch()}
+            onPress={() => router.push('/orders/stale')}
+            style={styles.iconBtn}
+            accessibilityLabel={locale === 'pt-BR' ? 'Parados e descarte' : 'Stale and discard'}
+          >
+            <Archive
+              size={20}
+              color={eligibleDiscardCount > 0 ? colors.danger : colors.textPrimary}
+              strokeWidth={2}
+            />
+            {staleAlertCount > 0 ? (
+              <View
+                style={[
+                  styles.iconBadge,
+                  eligibleDiscardCount > 0 ? styles.iconBadgeDanger : styles.iconBadgeWarn,
+                ]}
+              >
+                <Text style={styles.iconBadgeText}>
+                  {staleAlertCount > 99 ? '99+' : staleAlertCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              void queueQuery.refetch();
+              void abandonmentSummaryQuery.refetch();
+            }}
             style={styles.iconBtn}
             accessibilityLabel="Refresh"
           >
@@ -224,6 +264,7 @@ export default function WorkbenchScreen() {
             refreshing={queueQuery.isRefetching}
             onRefresh={() => {
               void queueQuery.refetch();
+              void abandonmentSummaryQuery.refetch();
             }}
             tintColor={colors.brandPrimary}
           />
@@ -267,6 +308,46 @@ export default function WorkbenchScreen() {
                 </Pressable>
               ) : null}
             </View>
+
+            {/* Stale / Discard Alert Callout */}
+            {staleAlertCount > 0 ? (
+              <Pressable
+                onPress={() => router.push('/orders/stale')}
+                style={({ pressed }) => [
+                  styles.staleBanner,
+                  eligibleDiscardCount > 0 ? styles.staleBannerDanger : styles.staleBannerWarn,
+                  pressed && styles.staleBannerPressed,
+                ]}
+              >
+                <View style={styles.staleBannerLeft}>
+                  <Archive
+                    size={16}
+                    color={eligibleDiscardCount > 0 ? colors.dangerDark : colors.warningDark}
+                  />
+                  <Text
+                    style={[
+                      styles.staleBannerText,
+                      eligibleDiscardCount > 0
+                        ? styles.staleBannerTextDanger
+                        : styles.staleBannerTextWarn,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {eligibleDiscardCount > 0
+                      ? locale === 'pt-BR'
+                        ? `${eligibleDiscardCount} ${eligibleDiscardCount === 1 ? 'aparelho elegível' : 'aparelhos elegíveis'} para descarte`
+                        : `${eligibleDiscardCount} item(s) eligible for discard`
+                      : locale === 'pt-BR'
+                        ? `${staleOver30Count} ${staleOver30Count === 1 ? 'aparelho parado' : 'aparelhos parados'} há mais de 30 dias`
+                        : `${staleOver30Count} item(s) waiting over 30 days`}
+                  </Text>
+                </View>
+                <ChevronRight
+                  size={16}
+                  color={eligibleDiscardCount > 0 ? colors.dangerDark : colors.warningDark}
+                />
+              </Pressable>
+            ) : null}
 
             {/* Horizontal Status Filter Chips */}
             <ScrollView
@@ -384,6 +465,67 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  iconBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBadgeDanger: {
+    backgroundColor: colors.danger,
+  },
+  iconBadgeWarn: {
+    backgroundColor: colors.warning,
+  },
+  iconBadgeText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 9.5,
+    color: colors.textOnDark,
+  },
+  staleBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  staleBannerDanger: {
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.dangerBorder,
+  },
+  staleBannerWarn: {
+    backgroundColor: colors.warningSoft,
+    borderColor: colors.warningBorder,
+  },
+  staleBannerPressed: {
+    opacity: 0.85,
+  },
+  staleBannerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  staleBannerText: {
+    flex: 1,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+  },
+  staleBannerTextDanger: {
+    color: colors.dangerDark,
+  },
+  staleBannerTextWarn: {
+    color: colors.warningDark,
   },
   avatarBadge: {
     width: 34,

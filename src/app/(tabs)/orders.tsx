@@ -355,6 +355,14 @@ export default function OrdersScreen() {
               </Pressable>
             );
           })}
+          <Pressable
+            onPress={() => router.push('/orders/stale')}
+            style={[styles.filterChip, styles.staleLinkChip]}
+          >
+            <Text style={styles.staleLinkChipText}>
+              {locale === 'pt-BR' ? 'Parados / Descarte' : 'Stale / Discard'}
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
 
@@ -575,6 +583,15 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: colors.textOnDark,
     fontFamily: fonts.bodySemiBold,
+  },
+  staleLinkChip: {
+    backgroundColor: colors.warningSoft,
+    borderColor: colors.warningBorder,
+  },
+  staleLinkChipText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.warningDark,
   },
   listContent: {
     paddingHorizontal: spacing.lg,

@@ -9,6 +9,7 @@ import type {
   FinancialSummaryResponse,
   FinancialTransactionResponse,
   ForgotPasswordRequest,
+  ItemPaymentSummaryResponse,
   ItemPhotoResponse,
   ItemStatus,
   LoginRequest,
@@ -246,4 +247,7 @@ export const financeApi = {
 
   deleteSupplier: (id: string) =>
     apiRequest<void>(`/api/v1/finance/suppliers/${id}`, { method: 'DELETE' }),
+
+  listItemPayments: (itemId: string) =>
+    apiRequest<ItemPaymentSummaryResponse[]>(`/api/v1/finance/order-items/${itemId}/payments`),
 };

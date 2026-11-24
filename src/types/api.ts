@@ -253,6 +253,7 @@ export interface OrderItemQueueResponse {
   status: ItemStatus;
   totalPrice: number;
   estimatedCompletionDate: string | null;
+  finishedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -405,4 +406,10 @@ export interface FinancialSummaryResponse {
   totalOverduePayables: number;
   incomeByPaymentMethod: Partial<Record<TransactionPaymentMethod, number>>;
   expenseByCategory: Partial<Record<TransactionCategory, number>>;
+}
+
+export interface ItemPaymentSummaryResponse {
+  paymentMethod: TransactionPaymentMethod;
+  amount: number;
+  paidAt: string;
 }
