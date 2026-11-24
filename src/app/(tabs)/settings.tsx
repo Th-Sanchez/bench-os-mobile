@@ -30,6 +30,7 @@ import { ResetMemberPasswordModal } from '@/components/settings/ResetMemberPassw
 import { TeamMemberModal } from '@/components/settings/TeamMemberModal';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
+import { getAppVersionLabel, isSentryConfigured } from '@/observability/sentry';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type {
   Role,
@@ -854,6 +855,16 @@ export default function SettingsScreen() {
             icon={<LogOut size={16} color={colors.danger} strokeWidth={2.2} />}
             onPress={handleSignOut}
           />
+
+          <Text style={styles.appVersionFooter}>
+            {`BenchOS ${getAppVersionLabel()}${
+              isSentryConfigured()
+                ? locale === 'pt-BR'
+                  ? ' · Monitoramento ativo'
+                  : ' · Monitoring active'
+                : ''
+            }`}
+          </Text>
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
@@ -1350,5 +1361,11 @@ const styles = StyleSheet.create({
   logoutDivider: {
     height: 1,
     backgroundColor: colors.bgSubtle,
+  },
+  appVersionFooter: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });

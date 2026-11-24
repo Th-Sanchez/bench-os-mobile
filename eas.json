@@ -15,7 +15,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.benchos.app.br"
+        "EXPO_PUBLIC_API_URL": "https://api.benchos.app.br",
+        "EXPO_PUBLIC_APP_ENV": "preview"
       }
     },
     "production": {
@@ -24,7 +25,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.benchos.app.br"
+        "EXPO_PUBLIC_API_URL": "https://api.benchos.app.br",
+        "EXPO_PUBLIC_APP_ENV": "production"
       }
     }
   }

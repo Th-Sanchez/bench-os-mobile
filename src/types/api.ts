@@ -53,6 +53,7 @@ export interface ProblemDetail {
   detail?: string;
   errors?: Record<string, string>;
   timestamp?: string;
+  requestId?: string;
 }
 
 // IAM
