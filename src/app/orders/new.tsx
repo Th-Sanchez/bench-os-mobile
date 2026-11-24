@@ -4,7 +4,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -34,6 +33,7 @@ import { CustomerFormModal } from '@/components/customers/CustomerFormModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TagBadge } from '@/components/ui/TagBadge';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CustomerResponse, Voltage } from '@/types/api';
@@ -93,6 +93,8 @@ function createEmptyItem(): DraftApplianceItem {
 export default function NewOrderScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const { t, locale, formatPhone } = useI18n();
   const params = useLocalSearchParams<{
     customerId?: string;
@@ -367,11 +369,8 @@ export default function NewOrderScreen() {
       : `Open Order · ${items.length} ${items.length === 1 ? 'item' : 'items'}`;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         {/* Top Navigation Bar */}
         <View style={styles.topBar}>
           <Pressable onPress={() => router.back()} style={styles.closeBtn} hitSlop={8}>
@@ -386,6 +385,8 @@ export default function NewOrderScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}
         >
           {errorMsg ? (
@@ -818,7 +819,12 @@ export default function NewOrderScreen() {
         </ScrollView>
 
         {/* Sticky Bottom CTA */}
-        <View style={styles.stickyFooter}>
+        <View
+          style={[
+            styles.stickyFooter,
+            { paddingBottom: isKeyboardVisible ? spacing.md : Math.max(insets.bottom, spacing.lg) },
+          ]}
+        >
           <Button
             label={ctaLabel}
             onPress={handleSubmit}

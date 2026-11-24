@@ -2,18 +2,19 @@ import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff, UserPlus, X } from 'lucide-react-native';
 import { usersApi } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CreateUserRequest, Role } from '@/types/api';
@@ -35,6 +36,8 @@ export function TeamMemberModal({ visible, onClose }: TeamMemberModalProps) {
 
 function TeamMemberBody({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const { locale, t } = useI18n();
 
   const [name, setName] = useState('');
@@ -90,11 +93,17 @@ function TeamMemberBody({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.backdrop}
-    >
-        <View style={styles.sheet}>
+    <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: isKeyboardVisible
+                ? spacing.lg
+                : Math.max(insets.bottom + spacing.md, spacing.xxl),
+            },
+          ]}
+        >
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <UserPlus size={18} color={colors.brandPrimary} />
@@ -111,6 +120,8 @@ function TeamMemberBody({ onClose }: { onClose: () => void }) {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.body}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets
           >
             <TextField
               label={locale === 'pt-BR' ? 'Nome completo' : 'Full name'}

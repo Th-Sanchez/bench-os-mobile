@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,6 +28,7 @@ import { Card } from '@/components/ui/Card';
 import { TextField } from '@/components/ui/TextField';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
+import { maskCpfCnpj, maskPhoneBR, unmaskDigits } from '@/utils/masks';
 
 type AuthMode = 'login' | 'register';
 
@@ -69,11 +69,21 @@ export default function LoginScreen() {
     }
 
     if (mode === 'register') {
-      if (!shopName.trim() || !document.trim() || !phone.trim() || !ownerName.trim()) {
+      const phoneDigits = unmaskDigits(phone);
+      const docDigits = unmaskDigits(document);
+      if (!shopName.trim() || !docDigits || !phoneDigits || !ownerName.trim()) {
         setErrorMessage(
           locale === 'pt-BR'
             ? 'Preencha todos os dados da oficina e do responsável.'
             : 'Please fill out all shop and owner fields.'
+        );
+        return;
+      }
+      if (phoneDigits.length < 10) {
+        setErrorMessage(
+          locale === 'pt-BR'
+            ? 'Informe um telefone com DDD (10 ou 11 dígitos).'
+            : 'Please enter a valid phone number with area code.'
         );
         return;
       }
@@ -95,7 +105,7 @@ export default function LoginScreen() {
         await registerShop({
           shopName: shopName.trim(),
           document: document.trim(),
-          phone: phone.trim(),
+          phone: unmaskDigits(phone),
           ownerName: ownerName.trim(),
           email: email.trim(),
           password,
@@ -121,20 +131,19 @@ export default function LoginScreen() {
     Alert.alert(
       locale === 'pt-BR' ? 'Recuperação de senha' : 'Password recovery',
       locale === 'pt-BR'
-        ? 'Peça ao proprietário (OWNER) da oficina para redefinir seu acesso ou entre em contato com o suporte BenchOS.'
-        : 'Ask your shop OWNER to reset your access or contact BenchOS support.'
+        ? 'Peça ao dono da oficina para redefinir seu acesso ou entre em contato com o suporte BenchOS.'
+        : 'Ask your shop owner to reset your access or contact BenchOS support.'
     );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}
         >
           {/* Brand Mark & Wordmark */}
@@ -198,10 +207,11 @@ export default function LoginScreen() {
                   />
                   <TextField
                     label={t.auth.documentLabel}
-                    placeholder="12.345.678/0001-01"
+                    placeholder="000.000.000-00 ou 00.000.000/0001-00"
                     value={document}
-                    onChangeText={setDocument}
-                    keyboardType="numeric"
+                    onChangeText={(val) => setDocument(maskCpfCnpj(val))}
+                    keyboardType="number-pad"
+                    maxLength={18}
                     mono
                     leftIcon={<FileText size={16} color={colors.textMuted} />}
                   />
@@ -209,8 +219,9 @@ export default function LoginScreen() {
                     label={t.auth.phoneLabel}
                     placeholder="(11) 99999-0001"
                     value={phone}
-                    onChangeText={setPhone}
+                    onChangeText={(val) => setPhone(maskPhoneBR(val))}
                     keyboardType="phone-pad"
+                    maxLength={15}
                     mono
                     leftIcon={<Phone size={16} color={colors.textMuted} />}
                   />

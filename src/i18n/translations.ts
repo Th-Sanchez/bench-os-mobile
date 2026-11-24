@@ -84,7 +84,7 @@ export const translations = {
       COMPLETED: 'Concluído',
     } satisfies Record<PhotoStage, string>,
     role: {
-      OWNER: 'OWNER',
+      OWNER: 'DONO',
       ATTENDANT: 'ATENDENTE',
       TECHNICIAN: 'TÉCNICO',
     } satisfies Record<Role, string>,

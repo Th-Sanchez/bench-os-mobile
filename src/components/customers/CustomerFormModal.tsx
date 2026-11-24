@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, Phone, StickyNote, Trash2, User, X } from 'lucide-react-native';
 import { customersApi } from '@/api/endpoints';
@@ -17,9 +18,11 @@ import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CustomerResponse } from '@/types/api';
+import { maskCpfCnpj, maskPhoneBR, unmaskDigits } from '@/utils/masks';
 
 interface CustomerFormModalProps {
   visible: boolean;
@@ -54,7 +57,9 @@ function CustomerFormBody({
   onSaved,
 }: Omit<CustomerFormModalProps, 'visible'>) {
   const { session } = useAuth();
-  const { locale, formatPhone } = useI18n();
+  const { locale } = useI18n();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const queryClient = useQueryClient();
 
   const isEditing = Boolean(customer);
@@ -63,8 +68,10 @@ function CustomerFormBody({
     (session?.user.role === 'OWNER' || session?.user.role === 'ATTENDANT');
 
   const [name, setName] = useState(customer?.name ?? '');
-  const [phone, setPhone] = useState(customer ? formatPhone(customer.phone) : '');
-  const [document, setDocument] = useState(customer?.document ?? '');
+  const [phone, setPhone] = useState(customer ? maskPhoneBR(customer.phone) : '');
+  const [document, setDocument] = useState(
+    customer?.document ? maskCpfCnpj(customer.document) : ''
+  );
   const [notes, setNotes] = useState(customer?.notes ?? '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -72,7 +79,7 @@ function CustomerFormBody({
     mutationFn: () => {
       const payload = {
         name: name.trim(),
-        phone: phone.trim(),
+        phone: unmaskDigits(phone),
         document: document.trim() || undefined,
         notes: notes.trim() || undefined,
       };
@@ -111,11 +118,20 @@ function CustomerFormBody({
 
   const handleSave = () => {
     setErrorMsg(null);
-    if (!name.trim() || !phone.trim()) {
+    const phoneDigits = unmaskDigits(phone);
+    if (!name.trim() || !phoneDigits) {
       setErrorMsg(
         locale === 'pt-BR'
           ? 'Nome e telefone são obrigatórios.'
           : 'Name and phone are required.'
+      );
+      return;
+    }
+    if (phoneDigits.length < 8) {
+      setErrorMsg(
+        locale === 'pt-BR'
+          ? 'Informe um telefone válido com DDD.'
+          : 'Please enter a valid phone number.'
       );
       return;
     }
@@ -140,94 +156,108 @@ function CustomerFormBody({
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-        <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
-            <X size={20} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>
-            {isEditing
-              ? locale === 'pt-BR'
-                ? 'Editar Cliente'
-                : 'Edit Customer'
-              : locale === 'pt-BR'
-                ? 'Novo Cliente'
-                : 'New Customer'}
-          </Text>
-          <View style={styles.headerSpacer} />
-        </View>
+    <KeyboardAvoidingView style={styles.root} behavior="padding">
+      <View
+        style={[
+          styles.header,
+          Platform.OS === 'android' && {
+            paddingTop: insets.top,
+            height: 58 + insets.top,
+          },
+        ]}
+      >
+        <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
+          <X size={20} color={colors.textPrimary} />
+        </Pressable>
+        <Text style={styles.headerTitle}>
+          {isEditing
+            ? locale === 'pt-BR'
+              ? 'Editar Cliente'
+              : 'Edit Customer'
+            : locale === 'pt-BR'
+              ? 'Novo Cliente'
+              : 'New Customer'}
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
-        <ScrollView
-          contentContainerStyle={styles.body}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {errorMsg ? (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{errorMsg}</Text>
-            </View>
-          ) : null}
+      <ScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
+        showsVerticalScrollIndicator={false}
+      >
+        {errorMsg ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
+        ) : null}
 
-          <TextField
-            label={locale === 'pt-BR' ? 'Nome completo *' : 'Full name *'}
-            placeholder="Ex: Maria Silva"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-            leftIcon={<User size={16} color={colors.textMuted} />}
+        <TextField
+          label={locale === 'pt-BR' ? 'Nome completo *' : 'Full name *'}
+          placeholder="Ex: Maria Silva"
+          value={name}
+          onChangeText={setName}
+          autoCapitalize="words"
+          leftIcon={<User size={16} color={colors.textMuted} />}
+        />
+
+        <TextField
+          label={locale === 'pt-BR' ? 'Telefone / WhatsApp *' : 'Phone / WhatsApp *'}
+          placeholder="(11) 98888-1234"
+          value={phone}
+          onChangeText={(val) => setPhone(maskPhoneBR(val))}
+          keyboardType="phone-pad"
+          maxLength={15}
+          mono
+          leftIcon={<Phone size={16} color={colors.textMuted} />}
+        />
+
+        <TextField
+          label={locale === 'pt-BR' ? 'CPF / CNPJ (opcional)' : 'Document / Tax ID (optional)'}
+          placeholder="000.000.000-00"
+          value={document}
+          onChangeText={(val) => setDocument(maskCpfCnpj(val))}
+          keyboardType="number-pad"
+          maxLength={18}
+          mono
+          leftIcon={<FileText size={16} color={colors.textMuted} />}
+        />
+
+        <TextField
+          label={locale === 'pt-BR' ? 'Observações (opcional)' : 'Notes (optional)'}
+          placeholder={
+            locale === 'pt-BR'
+              ? 'Ex: Prefere contato por WhatsApp'
+              : 'e.g. Prefers WhatsApp messages'
+          }
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          numberOfLines={3}
+          style={styles.notesInput}
+          leftIcon={<StickyNote size={16} color={colors.textMuted} />}
+        />
+
+        {canDelete ? (
+          <Button
+            label={locale === 'pt-BR' ? 'Remover cliente' : 'Remove customer'}
+            variant="dangerOutline"
+            onPress={handleDeleteConfirm}
+            loading={deleteMutation.isPending}
+            icon={<Trash2 size={16} color={colors.danger} />}
+            style={styles.deleteBtn}
           />
+        ) : null}
+      </ScrollView>
 
-          <TextField
-            label={locale === 'pt-BR' ? 'Telefone / WhatsApp *' : 'Phone / WhatsApp *'}
-            placeholder="(11) 98888-1234"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            mono
-            leftIcon={<Phone size={16} color={colors.textMuted} />}
-          />
-
-          <TextField
-            label={locale === 'pt-BR' ? 'CPF / CNPJ (opcional)' : 'Document / Tax ID (optional)'}
-            placeholder="000.000.000-00"
-            value={document}
-            onChangeText={setDocument}
-            keyboardType="numeric"
-            mono
-            leftIcon={<FileText size={16} color={colors.textMuted} />}
-          />
-
-          <TextField
-            label={locale === 'pt-BR' ? 'Observações (opcional)' : 'Notes (optional)'}
-            placeholder={
-              locale === 'pt-BR'
-                ? 'Ex: Prefere contato por WhatsApp'
-                : 'e.g. Prefers WhatsApp messages'
-            }
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            numberOfLines={3}
-            style={styles.notesInput}
-            leftIcon={<StickyNote size={16} color={colors.textMuted} />}
-          />
-
-          {canDelete ? (
-            <Button
-              label={locale === 'pt-BR' ? 'Remover cliente' : 'Remove customer'}
-              variant="dangerOutline"
-              onPress={handleDeleteConfirm}
-              loading={deleteMutation.isPending}
-              icon={<Trash2 size={16} color={colors.danger} />}
-              style={styles.deleteBtn}
-            />
-          ) : null}
-        </ScrollView>
-
-        <View style={styles.footer}>
+      <View
+        style={[
+          styles.footer,
+          { paddingBottom: isKeyboardVisible ? spacing.md : Math.max(insets.bottom, spacing.lg) },
+        ]}
+      >
           <Button
             label={
               isEditing

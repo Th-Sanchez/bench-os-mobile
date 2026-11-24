@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClipboardList, SlidersHorizontal, Users, Wallet, Wrench } from 'lucide-react-native';
 import { useAuth } from '@/auth/AuthProvider';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -8,6 +9,8 @@ import { colors, fonts } from '@/theme/tokens';
 export default function TabsLayout() {
   const { isOwner } = useAuth();
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
 
   return (
     <Tabs
@@ -24,9 +27,9 @@ export default function TabsLayout() {
           backgroundColor: colors.bgSurface,
           borderTopColor: colors.borderSubtle,
           borderTopWidth: 1,
-          height: 64,
+          height: 56 + bottomInset,
           paddingTop: 6,
-          paddingBottom: 8,
+          paddingBottom: bottomInset,
         },
       }}
     >

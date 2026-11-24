@@ -175,12 +175,12 @@ export default function FinanceDashboardScreen() {
             <Lock size={24} color={colors.textMuted} />
           </View>
           <Text style={styles.stateTitle}>
-            {locale === 'pt-BR' ? 'Acesso restrito ao proprietário' : 'Owner access only'}
+            {locale === 'pt-BR' ? 'Acesso restrito ao dono' : 'Owner access only'}
           </Text>
           <Text style={styles.stateSubtext}>
             {locale === 'pt-BR'
-              ? 'O módulo financeiro está disponível apenas para usuários com perfil OWNER.'
-              : 'The financial dashboard is restricted to OWNER accounts.'}
+              ? 'O módulo financeiro está disponível apenas para usuários com perfil DONO.'
+              : 'The financial dashboard is restricted to owner accounts.'}
           </Text>
         </View>
       </SafeAreaView>

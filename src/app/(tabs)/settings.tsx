@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -34,6 +35,12 @@ import type {
   UserResponse,
   WhatsappMessageStage,
 } from '@/types/api';
+import {
+  formatCurrencyInput,
+  maskCurrencyBRL,
+  maskInteger,
+  parseCurrencyBRL,
+} from '@/utils/masks';
 
 const TEMPLATE_PLACEHOLDERS = [
   { api: '{customerName}', ptBr: '{nomeCliente}' },
@@ -88,17 +95,6 @@ function getInitials(name: string): string {
   );
 }
 
-function formatMoneyInput(value: number): string {
-  return value > 0 ? value.toFixed(2).replace('.', ',') : '';
-}
-
-function parseMoneyInput(raw: string): number {
-  if (!raw.trim()) return 0;
-  const cleaned = raw.trim().replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.');
-  if (!cleaned) return Number.NaN;
-  return Number(cleaned);
-}
-
 export default function SettingsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -134,7 +130,7 @@ export default function SettingsScreen() {
 
   const settingsData = settingsQuery.data;
   const laborCostInput =
-    laborCostDraft ?? formatMoneyInput(Number(settingsData?.defaultLaborCost ?? 0));
+    laborCostDraft ?? formatCurrencyInput(Number(settingsData?.defaultLaborCost ?? 0));
   const estimatedDaysInput =
     estimatedDaysDraft ?? String(settingsData?.defaultEstimatedDays ?? 3);
   const abandonmentDaysInput =
@@ -236,7 +232,7 @@ export default function SettingsScreen() {
   const handleSaveSettings = () => {
     setSaveFeedback(null);
 
-    const labor = parseMoneyInput(laborCostInput);
+    const labor = parseCurrencyBRL(laborCostInput);
     const estDays = Number.parseInt(estimatedDaysInput.replace(/\D/g, ''), 10);
     const abandonDays = Number.parseInt(abandonmentDaysInput.replace(/\D/g, ''), 10);
 
@@ -391,10 +387,13 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -441,11 +440,11 @@ export default function SettingsScreen() {
                     <Text style={styles.inputPrefix}>R$</Text>
                     <TextInput
                       value={laborCostInput}
-                      onChangeText={setLaborCostDraft}
+                      onChangeText={(val) => setLaborCostDraft(maskCurrencyBRL(val))}
                       placeholder="0,00"
                       placeholderTextColor={colors.textMuted}
                       editable={isOwner}
-                      keyboardType="decimal-pad"
+                      keyboardType="number-pad"
                       style={styles.monoInput}
                     />
                   </View>
@@ -458,9 +457,10 @@ export default function SettingsScreen() {
                   <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
                     <TextInput
                       value={estimatedDaysInput}
-                      onChangeText={setEstimatedDaysDraft}
+                      onChangeText={(val) => setEstimatedDaysDraft(maskInteger(val, 3))}
                       editable={isOwner}
                       keyboardType="number-pad"
+                      maxLength={3}
                       style={styles.monoInput}
                     />
                     <Text style={styles.inputSuffix}>
@@ -479,9 +479,10 @@ export default function SettingsScreen() {
                 <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
                   <TextInput
                     value={abandonmentDaysInput}
-                    onChangeText={setAbandonmentDaysDraft}
+                    onChangeText={(val) => setAbandonmentDaysDraft(maskInteger(val, 4))}
                     editable={isOwner}
                     keyboardType="number-pad"
+                    maxLength={4}
                     style={styles.monoInput}
                   />
                   <Text style={styles.inputSuffix}>
@@ -589,8 +590,8 @@ export default function SettingsScreen() {
               ) : (
                 <Text style={styles.readonlyNotice}>
                   {locale === 'pt-BR'
-                    ? 'Apenas o proprietário (OWNER) pode alterar os parâmetros da oficina.'
-                    : 'Only the workshop OWNER can modify these settings.'}
+                    ? 'Apenas o dono da oficina pode alterar os parâmetros da oficina.'
+                    : 'Only the workshop owner can modify these settings.'}
                 </Text>
               )}
             </View>
@@ -837,6 +838,7 @@ export default function SettingsScreen() {
           />
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {isOwner ? (
         <TeamMemberModal
@@ -852,6 +854,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.bgCanvas,
+  },
+  flex: {
+    flex: 1,
   },
   scrollContent: {
     padding: spacing.lg,

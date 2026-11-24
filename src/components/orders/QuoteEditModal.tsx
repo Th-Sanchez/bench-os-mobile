@@ -9,31 +9,29 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react-native';
 import { ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ServiceOrderItemResponse } from '@/types/api';
+import {
+  formatCurrencyInput,
+  maskCurrencyBRL,
+  maskInteger,
+  parseCurrencyBRL,
+} from '@/utils/masks';
 
 interface QuoteEditModalProps {
   visible: boolean;
   orderId: string;
   item: ServiceOrderItemResponse;
   onClose: () => void;
-}
-
-function parseDecimalInput(raw: string): number {
-  const cleaned = raw.replace(/[^\d.,]/g, '').replace(',', '.');
-  const parsed = Number.parseFloat(cleaned);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : 0;
-}
-
-function formatOptionalDecimal(value: number): string {
-  return value > 0 ? value.toFixed(2).replace('.', ',') : '';
 }
 
 export function QuoteEditModal({ visible, orderId, item, onClose }: QuoteEditModalProps) {
@@ -69,20 +67,22 @@ function QuoteEditBody({
   onClose,
 }: Omit<QuoteEditModalProps, 'visible'> & { initialLabor: number }) {
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const { locale, formatCurrency } = useI18n();
 
   const [diagnosis, setDiagnosis] = useState(item.technicalDiagnosis ?? '');
-  const [laborInput, setLaborInput] = useState(formatOptionalDecimal(initialLabor));
-  const [partsInput, setPartsInput] = useState(formatOptionalDecimal(item.partsCost));
-  const [discountInput, setDiscountInput] = useState(formatOptionalDecimal(item.discount));
+  const [laborInput, setLaborInput] = useState(formatCurrencyInput(initialLabor));
+  const [partsInput, setPartsInput] = useState(formatCurrencyInput(item.partsCost));
+  const [discountInput, setDiscountInput] = useState(formatCurrencyInput(item.discount));
   const [warrantyInput, setWarrantyInput] = useState(
     item.warrantyDays > 0 ? String(item.warrantyDays) : ''
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const labor = parseDecimalInput(laborInput);
-  const parts = parseDecimalInput(partsInput);
-  const discount = parseDecimalInput(discountInput);
+  const labor = parseCurrencyBRL(laborInput);
+  const parts = parseCurrencyBRL(partsInput);
+  const discount = parseCurrencyBRL(discountInput);
   const computedTotal = Math.round((labor + parts - discount) * 100) / 100;
 
   const saveMutation = useMutation({
@@ -122,98 +122,114 @@ function QuoteEditBody({
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-        <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
-            <X size={20} color={colors.textPrimary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>
-            {locale === 'pt-BR' ? 'Diagnóstico e Orçamento' : 'Diagnosis & Quote'}
-          </Text>
-          <View style={styles.spacer} />
+    <KeyboardAvoidingView style={styles.root} behavior="padding">
+      <View
+        style={[
+          styles.header,
+          Platform.OS === 'android' && {
+            paddingTop: insets.top,
+            height: 58 + insets.top,
+          },
+        ]}
+      >
+        <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
+          <X size={20} color={colors.textPrimary} />
+        </Pressable>
+        <Text style={styles.headerTitle}>
+          {locale === 'pt-BR' ? 'Diagnóstico e Orçamento' : 'Diagnosis & Quote'}
+        </Text>
+        <View style={styles.spacer} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
+      >
+        {errorMsg ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
+        ) : null}
+
+        <TextField
+          label={locale === 'pt-BR' ? 'Diagnóstico técnico' : 'Technical diagnosis'}
+          placeholder={
+            locale === 'pt-BR'
+              ? 'Ex: Magnetron em curto e fusível de alta tensão queimado'
+              : 'Describe findings and repair plan...'
+          }
+          value={diagnosis}
+          onChangeText={setDiagnosis}
+          multiline
+          numberOfLines={4}
+          style={styles.textarea}
+        />
+
+        <View style={styles.row}>
+          <View style={styles.col}>
+            <TextField
+              label={locale === 'pt-BR' ? 'Mão de obra (R$)' : 'Labor (R$)'}
+              placeholder="0,00"
+              value={laborInput}
+              onChangeText={(val) => setLaborInput(maskCurrencyBRL(val))}
+              keyboardType="number-pad"
+              mono
+            />
+          </View>
+          <View style={styles.col}>
+            <TextField
+              label={locale === 'pt-BR' ? 'Peças (R$)' : 'Parts (R$)'}
+              placeholder="0,00"
+              value={partsInput}
+              onChangeText={(val) => setPartsInput(maskCurrencyBRL(val))}
+              keyboardType="number-pad"
+              mono
+            />
+          </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          {errorMsg ? (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{errorMsg}</Text>
-            </View>
-          ) : null}
-
-          <TextField
-            label={locale === 'pt-BR' ? 'Diagnóstico técnico' : 'Technical diagnosis'}
-            placeholder={
-              locale === 'pt-BR'
-                ? 'Ex: Magnetron em curto e fusível de alta tensão queimado'
-                : 'Describe findings and repair plan...'
-            }
-            value={diagnosis}
-            onChangeText={setDiagnosis}
-            multiline
-            numberOfLines={4}
-            style={styles.textarea}
-          />
-
-          <View style={styles.row}>
-            <View style={styles.col}>
-              <TextField
-                label={locale === 'pt-BR' ? 'Mão de obra (R$)' : 'Labor (R$)'}
-                placeholder="0,00"
-                value={laborInput}
-                onChangeText={setLaborInput}
-                keyboardType="decimal-pad"
-                mono
-              />
-            </View>
-            <View style={styles.col}>
-              <TextField
-                label={locale === 'pt-BR' ? 'Peças (R$)' : 'Parts (R$)'}
-                placeholder="0,00"
-                value={partsInput}
-                onChangeText={setPartsInput}
-                keyboardType="decimal-pad"
-                mono
-              />
-            </View>
+        <View style={styles.row}>
+          <View style={styles.col}>
+            <TextField
+              label={locale === 'pt-BR' ? 'Desconto (R$)' : 'Discount (R$)'}
+              placeholder="0,00"
+              value={discountInput}
+              onChangeText={(val) => setDiscountInput(maskCurrencyBRL(val))}
+              keyboardType="number-pad"
+              mono
+            />
           </View>
-
-          <View style={styles.row}>
-            <View style={styles.col}>
-              <TextField
-                label={locale === 'pt-BR' ? 'Desconto (R$)' : 'Discount (R$)'}
-                placeholder="0,00"
-                value={discountInput}
-                onChangeText={setDiscountInput}
-                keyboardType="decimal-pad"
-                mono
-              />
-            </View>
-            <View style={styles.col}>
-              <TextField
-                label={locale === 'pt-BR' ? 'Garantia (dias)' : 'Warranty (days)'}
-                placeholder="90"
-                value={warrantyInput}
-                onChangeText={setWarrantyInput}
-                keyboardType="numeric"
-                mono
-              />
-            </View>
+          <View style={styles.col}>
+            <TextField
+              label={locale === 'pt-BR' ? 'Garantia (dias)' : 'Warranty (days)'}
+              placeholder="90"
+              value={warrantyInput}
+              onChangeText={(val) => setWarrantyInput(maskInteger(val, 4))}
+              keyboardType="number-pad"
+              maxLength={4}
+              mono
+            />
           </View>
+        </View>
 
-          <View style={[styles.totalBox, computedTotal < 0 && styles.totalBoxError]}>
-            <Text style={styles.totalLabel}>
-              {locale === 'pt-BR' ? 'Total calculado' : 'Calculated total'}
-            </Text>
-            <Text style={[styles.totalValue, computedTotal < 0 && styles.totalValueError]}>
-              {formatCurrency(computedTotal)}
-            </Text>
-          </View>
-        </ScrollView>
+        <View style={[styles.totalBox, computedTotal < 0 && styles.totalBoxError]}>
+          <Text style={styles.totalLabel}>
+            {locale === 'pt-BR' ? 'Total calculado' : 'Calculated total'}
+          </Text>
+          <Text style={[styles.totalValue, computedTotal < 0 && styles.totalValueError]}>
+            {formatCurrency(computedTotal)}
+          </Text>
+        </View>
+      </ScrollView>
 
-        <View style={styles.footer}>
+      <View
+        style={[
+          styles.footer,
+          { paddingBottom: isKeyboardVisible ? spacing.md : Math.max(insets.bottom, spacing.lg) },
+        ]}
+      >
           <Button
             label={locale === 'pt-BR' ? 'Salvar orçamento' : 'Save quote'}
             onPress={handleSave}

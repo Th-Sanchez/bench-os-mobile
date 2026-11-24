@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Plus, Trash2, User, X } from 'lucide-react-native';
@@ -20,9 +19,11 @@ import { ApiError } from '@/api/http';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TagBadge } from '@/components/ui/TagBadge';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { OrderPaymentMethod } from '@/types/api';
+import { formatCurrencyInput, maskCurrencyBRL, parseCurrencyBRL } from '@/utils/masks';
 
 const PAYMENT_METHODS: OrderPaymentMethod[] = ['PIX', 'CREDIT_CARD', 'DEBIT_CARD', 'CASH'];
 
@@ -32,19 +33,11 @@ interface PaymentDraft {
   amountText: string;
 }
 
-function parseAmount(raw: string): number {
-  const cleaned = raw.replace(/[^\d.,]/g, '').replace(',', '.');
-  const parsed = Number.parseFloat(cleaned);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0;
-}
-
-function formatInputAmount(value: number): string {
-  return Math.max(0, value).toFixed(2).replace('.', ',');
-}
-
 export default function DeliverItemScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const { orderId, itemId } = useLocalSearchParams<{ orderId: string; itemId: string }>();
   const { t, locale, formatCurrency } = useI18n();
 
@@ -72,18 +65,18 @@ export default function DeliverItemScreen() {
       {
         localId: 'part-1',
         paymentMethod: 'PIX',
-        amountText: formatInputAmount(item.totalPrice),
+        amountText: formatCurrencyInput(item.totalPrice),
       },
     ];
   }, [customParts, item, isFreeReturn]);
 
   const enteredSum = useMemo(() => {
-    const sum = parts.reduce((acc, p) => acc + parseAmount(p.amountText), 0);
+    const sum = parts.reduce((acc, p) => acc + parseCurrencyBRL(p.amountText), 0);
     return Math.round(sum * 100) / 100;
   }, [parts]);
 
   const remaining = Math.round((expectedTotal - enteredSum) * 100) / 100;
-  const allPartsPositive = parts.every((p) => parseAmount(p.amountText) > 0);
+  const allPartsPositive = parts.every((p) => parseCurrencyBRL(p.amountText) > 0);
   const isBalanced = isFreeReturn || (parts.length > 0 && allPartsPositive && Math.abs(remaining) < 0.005);
 
   const deliverMutation = useMutation({
@@ -94,7 +87,7 @@ export default function DeliverItemScreen() {
       return ordersApi.deliverItem(orderId, itemId, {
         payments: parts.map((p) => ({
           paymentMethod: p.paymentMethod,
-          amount: parseAmount(p.amountText),
+          amount: parseCurrencyBRL(p.amountText),
         })),
       });
     },
@@ -134,7 +127,7 @@ export default function DeliverItemScreen() {
       {
         localId: `part-${Date.now()}-${parts.length}`,
         paymentMethod: nextMethod,
-        amountText: suggested > 0 ? formatInputAmount(suggested) : '',
+        amountText: suggested > 0 ? formatCurrencyInput(suggested) : '',
       },
     ]);
   };
@@ -159,11 +152,8 @@ export default function DeliverItemScreen() {
   const applianceTitle = [item.applianceType, item.brand, item.model].filter(Boolean).join(' ');
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         {/* Top Bar */}
         <View style={styles.topBar}>
           <Pressable onPress={() => router.back()} style={styles.closeBtn} hitSlop={8}>
@@ -178,6 +168,8 @@ export default function DeliverItemScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}
         >
           {/* Appliance & Total Summary Card */}
@@ -243,7 +235,7 @@ export default function DeliverItemScreen() {
               </View>
 
               {parts.map((part, idx) => {
-                const parsedValue = parseAmount(part.amountText);
+                const parsedValue = parseCurrencyBRL(part.amountText);
                 return (
                   <Card key={part.localId} style={styles.partCard}>
                     <View style={styles.partHeader}>
@@ -295,10 +287,12 @@ export default function DeliverItemScreen() {
                         <Text style={styles.currencyPrefix}>R$</Text>
                         <TextInput
                           value={part.amountText}
-                          onChangeText={(val) => updatePart(part.localId, { amountText: val })}
+                          onChangeText={(val) =>
+                            updatePart(part.localId, { amountText: maskCurrencyBRL(val) })
+                          }
                           placeholder="0,00"
                           placeholderTextColor={colors.textMuted}
-                          keyboardType="decimal-pad"
+                          keyboardType="number-pad"
                           style={styles.amountInput}
                         />
                         {parsedValue > 0 ? (
@@ -395,7 +389,12 @@ export default function DeliverItemScreen() {
         </ScrollView>
 
         {/* Sticky Bottom CTA */}
-        <View style={styles.stickyFooter}>
+        <View
+          style={[
+            styles.stickyFooter,
+            { paddingBottom: isKeyboardVisible ? spacing.md : Math.max(insets.bottom, spacing.lg) },
+          ]}
+        >
           <Button
             label={
               isFreeReturn

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Pressable,
@@ -12,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -80,6 +81,7 @@ function getProgressStepIndex(status: ItemStatus): number {
 export default function ApplianceDetailScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const { orderId, itemId } = useLocalSearchParams<{ orderId: string; itemId: string }>();
   const { t, locale, formatCurrency, formatPhone, formatShortDate } = useI18n();
@@ -415,7 +417,7 @@ export default function ApplianceDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Top Bar */}
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} style={styles.navIconBtn} hitSlop={8}>
@@ -737,7 +739,12 @@ export default function ApplianceDetailScreen() {
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
-      <View style={styles.stickyBar}>
+      <View
+        style={[
+          styles.stickyBar,
+          { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+        ]}
+      >
         <Button
           label="WhatsApp"
           variant="whatsapp"
@@ -774,7 +781,7 @@ export default function ApplianceDetailScreen() {
         animationType="fade"
         onRequestClose={() => setCancelModalOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
           <Card style={styles.cancelModalCard}>
             <Text style={styles.cardSectionTitle}>
               {locale === 'pt-BR' ? 'Cancelar aparelho' : 'Cancel item'}
@@ -820,7 +827,7 @@ export default function ApplianceDetailScreen() {
               />
             </View>
           </Card>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Fullscreen Photo Preview Modal */}

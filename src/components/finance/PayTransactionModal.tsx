@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, X } from 'lucide-react-native';
 import { financeApi } from '@/api/endpoints';
@@ -46,6 +47,7 @@ function PayTransactionBody({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const { locale, t, formatCurrency, formatShortDate } = useI18n();
   const [selectedMethod, setSelectedMethod] = useState<OrderPaymentMethod>('PIX');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -68,7 +70,7 @@ function PayTransactionBody({
   });
 
   return (
-    <View style={styles.backdrop}>
+    <View style={[styles.backdrop, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>

@@ -4,21 +4,23 @@ import {
   Alert,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import { financeApi } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { SupplierResponse, UpsertSupplierRequest } from '@/types/api';
+import { maskPhoneBR, unmaskDigits } from '@/utils/masks';
 
 interface SuppliersModalProps {
   visible: boolean;
@@ -27,6 +29,8 @@ interface SuppliersModalProps {
 
 export function SuppliersModal({ visible, onClose }: SuppliersModalProps) {
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const { locale, t, formatPhone } = useI18n();
 
   const [editing, setEditing] = useState<SupplierResponse | null>(null);
@@ -63,7 +67,7 @@ export function SuppliersModal({ visible, onClose }: SuppliersModalProps) {
   const openEdit = (supplier: SupplierResponse) => {
     setEditing(supplier);
     setName(supplier.name);
-    setPhone(supplier.phone ?? '');
+    setPhone(supplier.phone ? maskPhoneBR(supplier.phone) : '');
     setNotes(supplier.notes ?? '');
     setErrorMessage(null);
     setShowForm(true);
@@ -98,10 +102,19 @@ export function SuppliersModal({ visible, onClose }: SuppliersModalProps) {
       );
       return;
     }
+    const phoneDigits = unmaskDigits(phone);
+    if (phoneDigits.length > 0 && phoneDigits.length < 8) {
+      setErrorMessage(
+        locale === 'pt-BR'
+          ? 'Informe um telefone válido com DDD ou deixe em branco.'
+          : 'Enter a valid phone number or leave it blank.'
+      );
+      return;
+    }
     setErrorMessage(null);
     saveMutation.mutate({
       name: trimmedName,
-      phone: phone.trim() || undefined,
+      phone: phoneDigits || undefined,
       notes: notes.trim() || undefined,
     });
   };
@@ -127,11 +140,17 @@ export function SuppliersModal({ visible, onClose }: SuppliersModalProps) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
-      >
-        <View style={styles.sheet}>
+      <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: isKeyboardVisible
+                ? spacing.lg
+                : Math.max(insets.bottom + spacing.md, spacing.xxl),
+            },
+          ]}
+        >
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <Building2 size={18} color={colors.brandPrimary} />
@@ -175,9 +194,10 @@ export function SuppliersModal({ visible, onClose }: SuppliersModalProps) {
               <TextField
                 label={locale === 'pt-BR' ? 'Telefone / WhatsApp (opcional)' : 'Phone (optional)'}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(val) => setPhone(maskPhoneBR(val))}
                 placeholder="(11) 99999-0000"
                 keyboardType="phone-pad"
+                maxLength={15}
                 mono
               />
 

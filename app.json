@@ -19,7 +19,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "single",
@@ -33,7 +34,8 @@
         "expo-image-picker",
         {
           "cameraPermission": "BenchOS precisa da câmera para fotografar os aparelhos na bancada.",
-          "photosPermission": "BenchOS precisa acessar suas fotos para anexar imagens às Ordens de Serviço."
+          "photosPermission": "BenchOS precisa acessar suas fotos para anexar imagens às Ordens de Serviço.",
+          "microphonePermission": false
         }
       ],
       [
@@ -41,13 +43,23 @@
         {
           "backgroundColor": "#F8FAFC",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 140
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "54bc65dc-4ca3-44f1-aac2-04efc02f9f6f"
+      }
     }
   }
 }

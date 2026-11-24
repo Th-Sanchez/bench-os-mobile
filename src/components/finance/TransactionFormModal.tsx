@@ -2,18 +2,19 @@ import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, X } from 'lucide-react-native';
 import { financeApi } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type {
@@ -23,6 +24,7 @@ import type {
   TransactionStatus,
   TransactionType,
 } from '@/types/api';
+import { maskCurrencyBRL, maskDateBR, parseCurrencyBRL } from '@/utils/masks';
 
 interface TransactionFormModalProps {
   visible: boolean;
@@ -51,12 +53,6 @@ const INCOME_METHODS: TransactionPaymentMethod[] = [
   'DEBIT_CARD',
   'CREDIT_CARD',
 ];
-
-function parseMoney(raw: string): number {
-  const cleaned = raw.trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
-  if (!cleaned) return Number.NaN;
-  return Number(cleaned);
-}
 
 function formatDateInputPt(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0');
@@ -94,6 +90,8 @@ export function TransactionFormModal({ visible, onClose }: TransactionFormModalP
 
 function TransactionFormBody({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const { locale, t } = useI18n();
 
   const [type, setType] = useState<TransactionType>('EXPENSE');
@@ -178,7 +176,7 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    const numericAmount = parseMoney(amountInput);
+    const numericAmount = parseCurrencyBRL(amountInput);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setErrorMessage(
         locale === 'pt-BR' ? 'Informe um valor válido maior que zero.' : 'Enter a valid amount > 0.'
@@ -221,11 +219,17 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
   const isPendingMode = paymentMethod === 'STORE_CREDIT' || status === 'PENDING';
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.backdrop}
-    >
-        <View style={styles.sheet}>
+    <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: isKeyboardVisible
+                ? spacing.lg
+                : Math.max(insets.bottom + spacing.md, spacing.xxl),
+            },
+          ]}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>
               {locale === 'pt-BR' ? 'Novo lançamento' : 'New transaction'}
@@ -239,6 +243,8 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.formBody}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets
           >
             {/* Type Switcher */}
             <View style={styles.typeRow}>
@@ -326,9 +332,9 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
             <TextField
               label={locale === 'pt-BR' ? 'Valor (R$)' : 'Amount (R$)'}
               value={amountInput}
-              onChangeText={setAmountInput}
+              onChangeText={(val) => setAmountInput(maskCurrencyBRL(val))}
               placeholder="0,00"
-              keyboardType="decimal-pad"
+              keyboardType="number-pad"
               mono
             />
 
@@ -445,9 +451,10 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
               <TextField
                 label={locale === 'pt-BR' ? 'Data de vencimento (DD/MM/AAAA)' : 'Due date (DD/MM/YYYY)'}
                 value={dueDateInput}
-                onChangeText={setDueDateInput}
+                onChangeText={(val) => setDueDateInput(maskDateBR(val))}
                 placeholder="DD/MM/AAAA"
-                keyboardType="numbers-and-punctuation"
+                keyboardType="number-pad"
+                maxLength={10}
                 mono
               />
             ) : null}
