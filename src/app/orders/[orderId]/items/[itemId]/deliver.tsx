@@ -17,6 +17,7 @@ import {
   AlertCircle,
   CheckCircle2,
   FileText,
+  MessageCircle,
   Plus,
   ShieldCheck,
   Trash2,
@@ -37,7 +38,8 @@ import { formatCurrencyInput, maskCurrencyBRL, parseCurrencyBRL } from '@/utils/
 import {
   computeWarrantyInfo,
   formatFullDate,
-  generateAndShareWarrantyReceiptPdf,
+  sendConsolidatedOrderReceiptWhatsapp,
+  shareConsolidatedOrderReceiptPdf,
   type ReceiptPaymentPart,
 } from '@/utils/warrantyReceiptPdf';
 
@@ -146,16 +148,33 @@ export default function DeliverItemScreen() {
     },
   });
 
+  const handleSendReceiptWhatsapp = async () => {
+    if (!order || !deliveredReceipt || !session?.tenant) return;
+    try {
+      await sendConsolidatedOrderReceiptWhatsapp({
+        tenant: session.tenant,
+        order,
+        locale,
+        overrideItem: deliveredReceipt.item,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Não foi possível abrir o WhatsApp' : 'Could not open WhatsApp',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    }
+  };
+
   const handleShareReceiptPdf = async () => {
     if (!order || !deliveredReceipt || !session?.tenant) return;
     setSharingPdf(true);
     try {
-      await generateAndShareWarrantyReceiptPdf({
+      await shareConsolidatedOrderReceiptPdf({
         tenant: session.tenant,
         order,
-        item: deliveredReceipt.item,
-        payments: deliveredReceipt.payments,
         locale,
+        overrideItem: deliveredReceipt.item,
+        overrideItemPayments: deliveredReceipt.payments,
       });
     } catch (err) {
       Alert.alert(
@@ -303,18 +322,30 @@ export default function DeliverItemScreen() {
           <Button
             label={
               locale === 'pt-BR'
-                ? 'Compartilhar Comprovante / Garantia (PDF)'
-                : 'Share Receipt / Warranty (PDF)'
+                ? 'Enviar Comprovante no WhatsApp'
+                : 'Send Receipt on WhatsApp'
             }
-            loading={sharingPdf}
-            icon={<FileText size={17} color={colors.textOnDark} />}
-            onPress={() => void handleShareReceiptPdf()}
+            icon={<MessageCircle size={18} color={colors.textOnDark} />}
+            onPress={() => void handleSendReceiptWhatsapp()}
           />
-          <Button
-            label={locale === 'pt-BR' ? 'Voltar para a Bancada' : 'Back to Workbench'}
-            variant="secondary"
-            onPress={() => router.replace('/(tabs)/workbench')}
-          />
+          <View style={styles.successSecondaryRow}>
+            <Button
+              label={locale === 'pt-BR' ? 'Arquivo PDF' : 'PDF File'}
+              variant="secondary"
+              fullWidth={false}
+              loading={sharingPdf}
+              icon={<FileText size={16} color={colors.textPrimary} />}
+              onPress={() => void handleShareReceiptPdf()}
+              style={styles.successSecondaryBtn}
+            />
+            <Button
+              label={locale === 'pt-BR' ? 'Bancada' : 'Workbench'}
+              variant="secondary"
+              fullWidth={false}
+              onPress={() => router.replace('/(tabs)/workbench')}
+              style={styles.successSecondaryBtn}
+            />
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -995,5 +1026,12 @@ const styles = StyleSheet.create({
   warrantySummaryDateBold: {
     fontFamily: fonts.monoBold,
     color: colors.infoDark,
+  },
+  successSecondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  successSecondaryBtn: {
+    flex: 1,
   },
 });

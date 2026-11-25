@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Linking,
   Pressable,
@@ -16,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   ClipboardList,
+  FileText,
   MessageCircle,
   Phone,
   Plus,
@@ -35,6 +37,10 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ItemStatus, ServiceOrderItemResponse, ServiceOrderResponse } from '@/types/api';
+import {
+  sendConsolidatedOrderReceiptWhatsapp,
+  shareConsolidatedOrderReceiptPdf,
+} from '@/utils/warrantyReceiptPdf';
 
 type OrderFilter = 'ALL' | 'OPEN' | 'READY' | 'COMPLETED';
 
@@ -80,6 +86,7 @@ export default function OrdersScreen() {
   const [searchText, setSearchText] = useState('');
   const [filter, setFilter] = useState<OrderFilter>('ALL');
   const [whatsappOrder, setWhatsappOrder] = useState<ServiceOrderResponse | null>(null);
+  const [sharingPdfOrderId, setSharingPdfOrderId] = useState<string | null>(null);
 
   const trimmedSearch = searchText.trim();
   const numberMatch = trimmedSearch.match(ORDER_NUMBER_PATTERN);
@@ -168,10 +175,55 @@ export default function OrdersScreen() {
     }
   };
 
+  const handleSendOrderReceiptWhatsapp = async (order: ServiceOrderResponse) => {
+    if (!session?.tenant) return;
+    try {
+      await sendConsolidatedOrderReceiptWhatsapp({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Não foi possível abrir o WhatsApp' : 'Could not open WhatsApp',
+        err instanceof Error
+          ? err.message
+          : locale === 'pt-BR'
+            ? 'Tente novamente.'
+            : 'Please try again.'
+      );
+    }
+  };
+
+  const handleShareOrderReceipt = async (order: ServiceOrderResponse) => {
+    if (!session?.tenant) return;
+    setSharingPdfOrderId(order.id);
+    try {
+      await shareConsolidatedOrderReceiptPdf({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao gerar comprovante' : 'Could not generate receipt',
+        err instanceof Error
+          ? err.message
+          : locale === 'pt-BR'
+            ? 'Tente novamente.'
+            : 'Please try again.'
+      );
+    } finally {
+      setSharingPdfOrderId(null);
+    }
+  };
+
   const renderOrderCard = ({ item: order }: { item: ServiceOrderResponse }) => {
     const completed = isOrderCompleted(order);
     const total = computeOrderTotal(order.items);
     const itemCount = order.items.length;
+    const deliveredCount = order.items.filter((i) => i.status === 'DELIVERED').length;
+    const isGeneratingThisPdf = sharingPdfOrderId === order.id;
     const itemCountLabel =
       locale === 'pt-BR'
         ? `${itemCount} ${itemCount === 1 ? 'aparelho' : 'aparelhos'}`
@@ -249,6 +301,49 @@ export default function OrdersScreen() {
             </Pressable>
           ))}
         </View>
+
+        {deliveredCount > 0 ? (
+          <View style={styles.receiptActionsRow}>
+            <Pressable
+              onPress={() => void handleSendOrderReceiptWhatsapp(order)}
+              style={({ pressed }) => [
+                styles.receiptWaBtn,
+                pressed && styles.receiptPdfBtnPressed,
+              ]}
+            >
+              <MessageCircle size={15} color={colors.successDark} strokeWidth={2.2} />
+              <Text style={styles.receiptWaBtnText} numberOfLines={1}>
+                {locale === 'pt-BR'
+                  ? deliveredCount > 1
+                    ? `Enviar Comprovante (${deliveredCount})`
+                    : 'Enviar Comprovante'
+                  : deliveredCount > 1
+                    ? `Send Receipt (${deliveredCount})`
+                    : 'Send Receipt'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              disabled={sharingPdfOrderId !== null}
+              onPress={() => void handleShareOrderReceipt(order)}
+              style={({ pressed }) => [
+                styles.receiptPdfBtn,
+                pressed && styles.receiptPdfBtnPressed,
+                sharingPdfOrderId !== null && !isGeneratingThisPdf && styles.receiptPdfBtnDisabled,
+              ]}
+              accessibilityLabel={
+                locale === 'pt-BR' ? 'Compartilhar arquivo PDF' : 'Share PDF file'
+              }
+            >
+              {isGeneratingThisPdf ? (
+                <ActivityIndicator size="small" color={colors.brandPrimary} />
+              ) : (
+                <FileText size={15} color={colors.brandPrimary} strokeWidth={2.2} />
+              )}
+              <Text style={styles.receiptPdfBtnText}>PDF</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -751,6 +846,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textPrimary,
     flex: 1,
+  },
+  receiptActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  receiptWaBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  receiptWaBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.successDark,
+  },
+  receiptPdfBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.brandPrimarySoft,
+    borderWidth: 1,
+    borderColor: colors.brandPrimaryBorder,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  receiptPdfBtnPressed: {
+    opacity: 0.82,
+  },
+  receiptPdfBtnDisabled: {
+    opacity: 0.55,
+  },
+  receiptPdfBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.infoDark,
   },
   insightCard: {
     marginTop: 14,

@@ -54,7 +54,8 @@ import {
   computeWarrantyInfo,
   formatDateTime,
   formatFullDate,
-  generateAndShareWarrantyReceiptPdf,
+  sendConsolidatedOrderReceiptWhatsapp,
+  shareConsolidatedOrderReceiptPdf,
 } from '@/utils/warrantyReceiptPdf';
 
 const PROGRESS_STEPS: { labelPt: string; labelEn: string }[] = [
@@ -218,19 +219,29 @@ export default function ApplianceDetailScreen() {
     void Linking.openURL(`${API_BASE_URL}/track/${publicToken}`);
   };
 
+  const handleSendWarrantyWhatsapp = async () => {
+    if (!order || !item || !session?.tenant) return;
+    try {
+      await sendConsolidatedOrderReceiptWhatsapp({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Não foi possível abrir o WhatsApp' : 'Could not open WhatsApp',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    }
+  };
+
   const handleShareWarrantyPdf = async () => {
     if (!order || !item || !session?.tenant) return;
     setSharingPdf(true);
     try {
-      const payments = (itemPaymentsQuery.data ?? []).map((p) => ({
-        paymentMethod: p.paymentMethod,
-        amount: Number(p.amount) || 0,
-      }));
-      await generateAndShareWarrantyReceiptPdf({
+      await shareConsolidatedOrderReceiptPdf({
         tenant: session.tenant,
         order,
-        item,
-        payments,
         locale,
       });
     } catch (err) {
@@ -449,10 +460,9 @@ export default function ApplianceDetailScreen() {
       case 'DELIVERED':
         return (
           <Button
-            label={locale === 'pt-BR' ? 'Comprovante PDF' : 'Receipt PDF'}
-            loading={sharingPdf}
-            icon={<FileText size={17} color={colors.textOnDark} />}
-            onPress={() => void handleShareWarrantyPdf()}
+            label={locale === 'pt-BR' ? 'Enviar Comprovante' : 'Send Receipt'}
+            icon={<MessageCircle size={17} color={colors.textOnDark} />}
+            onPress={() => void handleSendWarrantyWhatsapp()}
             style={styles.primaryBarBtn}
           />
         );
@@ -895,6 +905,19 @@ export default function ApplianceDetailScreen() {
                   </View>
                 </>
               ) : null}
+
+              <View style={styles.divider} />
+              <Button
+                label={
+                  locale === 'pt-BR'
+                    ? `Compartilhar arquivo PDF (OS #${order.orderNumber})`
+                    : `Share PDF file (Order #${order.orderNumber})`
+                }
+                variant="secondary"
+                loading={sharingPdf}
+                icon={<FileText size={15} color={colors.brandPrimary} />}
+                onPress={() => void handleShareWarrantyPdf()}
+              />
             </Card>
           );
         })() : null}
