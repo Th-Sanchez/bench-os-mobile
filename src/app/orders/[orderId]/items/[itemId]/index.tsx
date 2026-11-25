@@ -158,6 +158,9 @@ export default function ApplianceDetailScreen() {
       setCancelReason('');
     },
     onError: (err) => {
+      if (err instanceof ApiError && (err.status === 409 || err.status === 422)) {
+        invalidateAll();
+      }
       Alert.alert(
         locale === 'pt-BR' ? 'Ação não permitida' : 'Action not allowed',
         err instanceof ApiError ? err.message : t.common.errorGeneric
