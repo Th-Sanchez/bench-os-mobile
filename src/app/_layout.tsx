@@ -3,7 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import {
@@ -22,8 +22,11 @@ import {
 } from '@expo-google-fonts/jetbrains-mono';
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { AppErrorFallback } from '@/components/ui/AppErrorFallback';
+import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { I18nProvider } from '@/i18n/I18nProvider';
 import { PushNotificationsProvider } from '@/notifications/PushNotificationsContext';
+import { NetworkStatusProvider } from '@/offline/NetworkStatusContext';
+import { createBenchQueryClient, queryPersistOptions } from '@/offline/queryPersistence';
 import { PrintPreferencesProvider } from '@/settings/PrintPreferencesContext';
 import {
   captureHandledException,
@@ -40,14 +43,7 @@ void SplashScreen.preventAutoHideAsync();
 
 export const ErrorBoundary = wrapRouterErrorBoundary(AppErrorFallback);
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 15_000,
-    },
-  },
-});
+const queryClient = createBenchQueryClient();
 
 function RootNavigator() {
   const { isAuthenticated, isHydrating } = useAuth();
@@ -124,18 +120,29 @@ function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <I18nProvider>
-          <PrintPreferencesProvider>
-            <AuthProvider>
-              <PushNotificationsProvider>
-                <StatusBar style="dark" />
-                <RootNavigator />
-              </PushNotificationsProvider>
-            </AuthProvider>
-          </PrintPreferencesProvider>
-        </I18nProvider>
-      </QueryClientProvider>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={queryPersistOptions}
+        onSuccess={() => {
+          void queryClient.resumePausedMutations();
+        }}
+      >
+        <NetworkStatusProvider>
+          <I18nProvider>
+            <PrintPreferencesProvider>
+              <AuthProvider>
+                <PushNotificationsProvider>
+                  <StatusBar style="dark" />
+                  <View style={{ flex: 1 }}>
+                    <OfflineBanner />
+                    <RootNavigator />
+                  </View>
+                </PushNotificationsProvider>
+              </AuthProvider>
+            </PrintPreferencesProvider>
+          </I18nProvider>
+        </NetworkStatusProvider>
+      </PersistQueryClientProvider>
     </SafeAreaProvider>
   );
 }

@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { onlineManager } from '@tanstack/react-query';
 import { File, UploadTask, UploadType } from 'expo-file-system';
 import { addApiBreadcrumb, captureApiError } from '@/observability/sentry';
 import type { ProblemDetail } from '@/types/api';
@@ -87,6 +88,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       durationMs: Date.now() - startedAt,
       ok: false,
     });
+    if (!onlineManager.isOnline()) {
+      throw new ApiError(
+        0,
+        'Sem conexão com a internet. Reconecte o Wi-Fi ou dados móveis e tente novamente.'
+      );
+    }
     captureApiError(networkError, {
       method,
       path: normalizedPath,

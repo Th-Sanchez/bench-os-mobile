@@ -37,6 +37,11 @@ import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
 import { usePushNotifications } from '@/notifications/PushNotificationsContext';
 import { getAppVersionLabel, isSentryConfigured } from '@/observability/sentry';
+import { useNetworkStatus } from '@/offline/NetworkStatusContext';
+import {
+  clearPersistedQueryCache,
+  getPersistedCacheStats,
+} from '@/offline/queryPersistence';
 import {
   usePrintPreferences,
   type PrintLabelMode,
@@ -119,6 +124,14 @@ export default function SettingsScreen() {
     isBusy: isPushBusy,
     enableNotifications,
   } = usePushNotifications();
+  const { isOffline, lastSyncedAt } = useNetworkStatus();
+  const [clearingCache, setClearingCache] = useState(false);
+
+  const cacheStatsQuery = useQuery({
+    queryKey: ['offline-cache-stats', lastSyncedAt ?? 0],
+    queryFn: () => getPersistedCacheStats(),
+    staleTime: 5_000,
+  });
   const {
     mode: printMode,
     scannerEnabled,
@@ -1059,6 +1072,70 @@ export default function SettingsScreen() {
                 )}
               </Pressable>
             ) : null}
+          </View>
+
+          <View style={styles.logoutDivider} />
+
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <Text style={styles.langTitle}>
+                {locale === 'pt-BR' ? 'Modo offline (cache local)' : 'Offline mode (local cache)'}
+              </Text>
+              <Text style={styles.langSubtitle}>
+                {isOffline
+                  ? locale === 'pt-BR'
+                    ? 'Sem internet · exibindo dados salvos no aparelho'
+                    : 'Offline · showing cached data on device'
+                  : cacheStatsQuery.data?.hasCache
+                    ? locale === 'pt-BR'
+                      ? `Online · ~${cacheStatsQuery.data.sizeKb} KB salvos para consulta sem Wi-Fi`
+                      : `Online · ~${cacheStatsQuery.data.sizeKb} KB cached for offline reading`
+                    : locale === 'pt-BR'
+                      ? 'Online · cache preenchido automaticamente ao navegar'
+                      : 'Online · cache populates automatically as you browse'}
+              </Text>
+            </View>
+
+            <Pressable
+              disabled={clearingCache || isOffline}
+              onPress={() => {
+                Alert.alert(
+                  locale === 'pt-BR' ? 'Limpar cache local?' : 'Clear local cache?',
+                  locale === 'pt-BR'
+                    ? 'Os dados salvos para leitura offline serão removidos e recarregados da internet.'
+                    : 'Cached offline data will be removed and reloaded from the server.',
+                  [
+                    { text: t.common.cancel, style: 'cancel' },
+                    {
+                      text: locale === 'pt-BR' ? 'Limpar' : 'Clear',
+                      onPress: () => {
+                        setClearingCache(true);
+                        void clearPersistedQueryCache()
+                          .then(async () => {
+                            await queryClient.invalidateQueries();
+                            await cacheStatsQuery.refetch();
+                          })
+                          .finally(() => {
+                            setClearingCache(false);
+                          });
+                      },
+                    },
+                  ]
+                );
+              }}
+              style={[
+                styles.pushActionBtn,
+                (clearingCache || isOffline) && styles.addCustomBtnDisabled,
+              ]}
+            >
+              {clearingCache ? (
+                <ActivityIndicator size="small" color={colors.brandPrimary} />
+              ) : (
+                <Text style={styles.pushActionBtnText}>
+                  {locale === 'pt-BR' ? 'Limpar' : 'Clear'}
+                </Text>
+              )}
+            </Pressable>
           </View>
 
           <View style={styles.logoutDivider} />
