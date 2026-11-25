@@ -29,6 +29,7 @@ import {
   MessageCircle,
   MoreVertical,
   Pencil,
+  RotateCcw,
   ShieldCheck,
   Trash2,
   User,
@@ -38,6 +39,7 @@ import { financeApi, ordersApi, photosApi } from '@/api/endpoints';
 import { API_BASE_URL, ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
+import { WarrantyReturnModal } from '@/components/orders/WarrantyReturnModal';
 import {
   inferWhatsappStageFromStatuses,
   WhatsappStageModal,
@@ -100,6 +102,7 @@ export default function ApplianceDetailScreen() {
   const [selectedPhotoStage, setSelectedPhotoStage] = useState<PhotoStage>('INTAKE');
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [warrantyReturnModalOpen, setWarrantyReturnModalOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [sharingPdf, setSharingPdf] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -351,6 +354,25 @@ export default function ApplianceDetailScreen() {
             </View>
           );
         }
+        if (item.warrantyReturn && Number(item.totalPrice) === 0) {
+          return (
+            <View style={styles.dualDecisionRow}>
+              <Button
+                label={locale === 'pt-BR' ? 'Orçamento' : 'Quote'}
+                variant="secondary"
+                loading={busy}
+                onPress={() => transitionMutation.mutate({ status: 'QUOTE_SENT' })}
+                style={styles.decisionHalfBtn}
+              />
+              <Button
+                label={locale === 'pt-BR' ? 'Coberto (R$ 0)' : 'Covered ($0)'}
+                loading={busy}
+                onPress={() => transitionMutation.mutate({ status: 'APPROVED' })}
+                style={styles.decisionHalfBtn}
+              />
+            </View>
+          );
+        }
         return (
           <Button
             label={locale === 'pt-BR' ? 'Enviar Orçamento' : 'Send Quote'}
@@ -516,6 +538,37 @@ export default function ApplianceDetailScreen() {
               <Text style={styles.orderNumberMono}>OS #{order.orderNumber}</Text>
             </View>
 
+            {item.warrantyReturn ? (
+              <Pressable
+                disabled={!item.parentOrderId || !item.parentItemId}
+                onPress={() => {
+                  if (item.parentOrderId && item.parentItemId) {
+                    router.push({
+                      pathname: '/orders/[orderId]/items/[itemId]',
+                      params: { orderId: item.parentOrderId, itemId: item.parentItemId },
+                    });
+                  }
+                }}
+                style={styles.warrantyReturnBanner}
+              >
+                <View style={styles.warrantyReturnBannerLeft}>
+                  <RotateCcw size={14} color={colors.warningDark} />
+                  <Text style={styles.warrantyReturnBannerText}>
+                    {item.parentItemTag
+                      ? locale === 'pt-BR'
+                        ? `Retorno em Garantia · Ref. #${item.parentItemTag}`
+                        : `Warranty Return · Ref. #${item.parentItemTag}`
+                      : locale === 'pt-BR'
+                        ? 'Retorno em Garantia'
+                        : 'Warranty Return'}
+                  </Text>
+                </View>
+                {item.parentOrderId && item.parentItemId ? (
+                  <ChevronRight size={14} color={colors.warningDark} />
+                ) : null}
+              </Pressable>
+            ) : null}
+
             <Text style={styles.applianceTitle}>{applianceTitle}</Text>
 
             {/* 5-step progress stepper */}
@@ -556,7 +609,15 @@ export default function ApplianceDetailScreen() {
 
           {/* Customer strip */}
           <View style={styles.customerStrip}>
-            <View style={styles.customerLeft}>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/customers/[customerId]',
+                  params: { customerId: order.customerId },
+                })
+              }
+              style={styles.customerLeft}
+            >
               <View style={styles.customerIconBox}>
                 <User size={15} color={colors.brandPrimary} />
               </View>
@@ -564,7 +625,7 @@ export default function ApplianceDetailScreen() {
                 <Text style={styles.customerName}>{order.customerName ?? '—'}</Text>
                 <Text style={styles.customerPhone}>{formatPhone(order.customerPhone)}</Text>
               </View>
-            </View>
+            </Pressable>
             <Pressable
               onPress={() => openPublicTrackingWeb(order.publicToken)}
               style={styles.publicLinkChip}
@@ -850,8 +911,8 @@ export default function ApplianceDetailScreen() {
                     >
                       {warranty.isActive
                         ? locale === 'pt-BR'
-                          ? `${warranty.daysRemaining}d restantes`
-                          : `${warranty.daysRemaining}d left`
+                          ? `${warranty.daysRemaining} de ${warranty.warrantyDays}d restantes`
+                          : `${warranty.daysRemaining}/${warranty.warrantyDays}d left`
                         : locale === 'pt-BR'
                           ? 'Expirada'
                           : 'Expired'}
@@ -910,17 +971,29 @@ export default function ApplianceDetailScreen() {
               ) : null}
 
               <View style={styles.divider} />
-              <Button
-                label={
-                  locale === 'pt-BR'
-                    ? `Compartilhar arquivo PDF (OS #${order.orderNumber})`
-                    : `Share PDF file (Order #${order.orderNumber})`
-                }
-                variant="secondary"
-                loading={sharingPdf}
-                icon={<FileText size={15} color={colors.brandPrimary} />}
-                onPress={() => void handleShareWarrantyPdf()}
-              />
+              <View style={styles.warrantyActionGroup}>
+                <Button
+                  label={
+                    locale === 'pt-BR'
+                      ? 'Abrir Retorno de Garantia'
+                      : 'Open Warranty Return'
+                  }
+                  variant="secondary"
+                  icon={<RotateCcw size={15} color={colors.brandPrimary} />}
+                  onPress={() => setWarrantyReturnModalOpen(true)}
+                />
+                <Button
+                  label={
+                    locale === 'pt-BR'
+                      ? `Compartilhar arquivo PDF (OS #${order.orderNumber})`
+                      : `Share PDF file (Order #${order.orderNumber})`
+                  }
+                  variant="secondary"
+                  loading={sharingPdf}
+                  icon={<FileText size={15} color={colors.brandPrimary} />}
+                  onPress={() => void handleShareWarrantyPdf()}
+                />
+              </View>
             </Card>
           );
         })() : null}
@@ -960,6 +1033,23 @@ export default function ApplianceDetailScreen() {
         orderId={orderId}
         item={item}
         onClose={() => setQuoteModalOpen(false)}
+      />
+
+      {/* Warranty Return Modal */}
+      <WarrantyReturnModal
+        visible={warrantyReturnModalOpen}
+        orderId={order.id}
+        item={item}
+        onClose={() => setWarrantyReturnModalOpen(false)}
+        onCreated={(createdOrder) => {
+          const createdItem = createdOrder.items[0];
+          if (createdItem) {
+            router.push({
+              pathname: '/orders/[orderId]/items/[itemId]',
+              params: { orderId: createdOrder.id, itemId: createdItem.id },
+            });
+          }
+        }}
       />
 
       {/* Cancellation Reason Modal */}
@@ -1567,5 +1657,31 @@ const styles = StyleSheet.create({
     fontFamily: fonts.monoBold,
     fontSize: 13,
     color: colors.infoDark,
+  },
+  warrantyActionGroup: {
+    gap: 8,
+  },
+  warrantyReturnBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: colors.warningSoft,
+    borderWidth: 1,
+    borderColor: colors.warningBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  warrantyReturnBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    flex: 1,
+  },
+  warrantyReturnBannerText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.warningDark,
   },
 });

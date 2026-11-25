@@ -6,6 +6,7 @@ import type {
   CreateFinancialTransactionRequest,
   CreateServiceOrderRequest,
   CreateUserRequest,
+  CreateWarrantyReturnRequest,
   CustomerResponse,
   DeliverItemRequest,
   FinancialSummaryResponse,
@@ -173,6 +174,12 @@ export const ordersApi = {
     apiRequest<ServiceOrderItemResponse>(`/api/v1/orders/${orderId}/items/${itemId}/deliver`, {
       method: 'POST',
       body: payload ?? {},
+    }),
+
+  openWarrantyReturn: (orderId: string, itemId: string, payload: CreateWarrantyReturnRequest) =>
+    apiRequest<ServiceOrderResponse>(`/api/v1/orders/${orderId}/items/${itemId}/warranty-return`, {
+      method: 'POST',
+      body: payload,
     }),
 
   getOrderWhatsappLink: (orderId: string, stage?: WhatsappMessageStage) =>

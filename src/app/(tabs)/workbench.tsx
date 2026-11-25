@@ -178,6 +178,13 @@ export default function WorkbenchScreen() {
             <View style={styles.tagGroup}>
               <TagBadge label={`#${item.tag}`} variant="dark" />
               <TagBadge label={t.voltage[item.voltage]} variant="subtle" />
+              {item.warrantyReturn ? (
+                <View style={styles.warrantyBadge}>
+                  <Text style={styles.warrantyBadgeText}>
+                    {locale === 'pt-BR' ? 'GARANTIA' : 'WARRANTY'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <StatusBadge status={item.status} />
           </View>
@@ -776,5 +783,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
     color: colors.textOnDark,
+  },
+  warrantyBadge: {
+    backgroundColor: colors.warningSoft,
+    borderWidth: 1,
+    borderColor: colors.warningBorder,
+    borderRadius: radius.sm,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  warrantyBadgeText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    color: colors.warningDark,
   },
 });

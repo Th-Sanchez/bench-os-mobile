@@ -57,7 +57,6 @@ export default function CustomersScreen() {
   const [filter, setFilter] = useState<CustomerFilter>('ALL');
   const [modalVisible, setModalVisible] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
-  const [editingCustomer, setEditingCustomer] = useState<CustomerResponse | null>(null);
 
   const trimmedQuery = searchText.trim();
 
@@ -96,13 +95,14 @@ export default function CustomersScreen() {
   }, [allCustomers, filter]);
 
   const openCreateModal = () => {
-    setEditingCustomer(null);
     setModalVisible(true);
   };
 
-  const openEditModal = (customer: CustomerResponse) => {
-    setEditingCustomer(customer);
-    setModalVisible(true);
+  const openCustomerDetail = (customer: CustomerResponse) => {
+    router.push({
+      pathname: '/customers/[customerId]',
+      params: { customerId: customer.id },
+    });
   };
 
   const handleOpenNewOrder = (customer: CustomerResponse) => {
@@ -121,7 +121,7 @@ export default function CustomersScreen() {
 
     return (
       <Pressable
-        onPress={() => openEditModal(item)}
+        onPress={() => openCustomerDetail(item)}
         style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       >
         <View style={styles.cardLeft}>
@@ -332,7 +332,7 @@ export default function CustomersScreen() {
 
       <CustomerFormModal
         visible={modalVisible}
-        customer={editingCustomer}
+        customer={null}
         onClose={() => setModalVisible(false)}
       />
 

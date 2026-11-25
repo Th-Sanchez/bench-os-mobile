@@ -228,6 +228,10 @@ export interface ServiceOrderItemResponse {
   finishedAt: string | null;
   deliveredAt: string | null;
   discardedAt: string | null;
+  parentItemId: string | null;
+  parentOrderId: string | null;
+  parentItemTag: string | null;
+  warrantyReturn: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -265,8 +269,16 @@ export interface OrderItemQueueResponse {
   totalPrice: number;
   estimatedCompletionDate: string | null;
   finishedAt: string | null;
+  parentItemId: string | null;
+  warrantyReturn: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateWarrantyReturnRequest {
+  reportedIssue: string;
+  accessories?: string;
+  notes?: string;
 }
 
 export interface UpdateItemQuoteRequest {
