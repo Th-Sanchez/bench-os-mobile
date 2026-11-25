@@ -1,5 +1,39 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Locale, TranslationDictionary, translations } from './translations';
+
+const LOCALE_STORAGE_KEY = 'benchos_locale_v1';
+
+async function readStoredLocale(): Promise<Locale | null> {
+  try {
+    let raw: string | null = null;
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        raw = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+      }
+    } else {
+      raw = await AsyncStorage.getItem(LOCALE_STORAGE_KEY);
+    }
+    return raw === 'en' || raw === 'pt-BR' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+async function persistLocale(next: Locale): Promise<void> {
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(LOCALE_STORAGE_KEY, next);
+      }
+    } else {
+      await AsyncStorage.setItem(LOCALE_STORAGE_KEY, next);
+    }
+  } catch {
+    // Best-effort preference persistence
+  }
+}
 
 interface I18nContextValue {
   locale: Locale;
@@ -13,7 +47,24 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocale] = useState<Locale>('pt-BR');
+  const [locale, setLocaleState] = useState<Locale>('pt-BR');
+
+  useEffect(() => {
+    let active = true;
+    void readStoredLocale().then((stored) => {
+      if (active && stored) {
+        setLocaleState(stored);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const setLocale = useCallback((next: Locale) => {
+    setLocaleState(next);
+    void persistLocale(next);
+  }, []);
 
   const value = useMemo<I18nContextValue>(() => {
     const t = translations[locale];
@@ -54,7 +105,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       formatPhone,
       formatShortDate,
     };
-  }, [locale]);
+  }, [locale, setLocale]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { FinancialTransactionResponse, OrderPaymentMethod } from '@/types/api';
+import { formatTransactionDescription } from '@/utils/transactionDescription';
 
 const SETTLEMENT_METHODS: OrderPaymentMethod[] = ['PIX', 'CASH', 'DEBIT_CARD', 'CREDIT_CARD'];
 
@@ -94,8 +95,8 @@ function PayTransactionBody({
           <View style={styles.summaryBox}>
             <Text style={styles.summaryDesc} numberOfLines={2}>
               {transaction.supplierName
-                ? `${transaction.supplierName} · ${transaction.description}`
-                : transaction.description}
+                ? `${transaction.supplierName} · ${formatTransactionDescription(transaction.description, locale)}`
+                : formatTransactionDescription(transaction.description, locale)}
             </Text>
             <View style={styles.summaryMetaRow}>
               {transaction.dueDate ? (
