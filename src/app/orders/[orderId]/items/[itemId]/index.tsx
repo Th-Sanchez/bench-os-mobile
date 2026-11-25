@@ -33,6 +33,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Trash2,
+  TrendingUp,
   User,
   X,
 } from 'lucide-react-native';
@@ -328,12 +329,15 @@ export default function ApplianceDetailScreen() {
         void runPrint('intake');
       },
     });
-    buttons.push({ text: t.common.cancel, style: 'cancel' });
+    if (buttons.length < 3) {
+      buttons.push({ text: t.common.cancel, style: 'cancel' });
+    }
 
     Alert.alert(
       locale === 'pt-BR' ? `Imprimir (${modeTag})` : `Print (${modeTag})`,
       undefined,
-      buttons
+      buttons,
+      { cancelable: true }
     );
   };
 
@@ -370,7 +374,7 @@ export default function ApplianceDetailScreen() {
       });
     }
 
-    if (!isTerminal) {
+    if (!isTerminal && options.length < 3) {
       options.push({
         text: locale === 'pt-BR' ? 'Cancelar aparelho' : 'Cancel item',
         style: 'destructive',
@@ -378,8 +382,10 @@ export default function ApplianceDetailScreen() {
       });
     }
 
-    options.push({ text: t.common.cancel, style: 'cancel' });
-    Alert.alert(`#${item.tag}`, undefined, options);
+    if (options.length < 3) {
+      options.push({ text: t.common.cancel, style: 'cancel' });
+    }
+    Alert.alert(`#${item.tag}`, undefined, options, { cancelable: true });
   };
 
   if (orderQuery.isLoading) {
@@ -943,6 +949,87 @@ export default function ApplianceDetailScreen() {
             <Text style={styles.totalAmount}>{formatCurrency(item.totalPrice)}</Text>
           </View>
 
+          {session?.user.role === 'OWNER' &&
+          (Number(item.totalPrice) > 0 || Number(item.partsCostActual) > 0) ? (() => {
+            const revenue = Number(item.totalPrice) || 0;
+            const actualParts = Number(item.partsCostActual) || 0;
+            const netProfit =
+              typeof item.estimatedNetProfit === 'number'
+                ? item.estimatedNetProfit
+                : revenue - actualParts;
+            const marginPct = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
+            const isNegative = netProfit < 0;
+
+            return (
+              <View
+                style={{
+                  backgroundColor: isNegative ? colors.dangerSoft : colors.successSoft,
+                  borderWidth: 1,
+                  borderColor: isNegative ? colors.dangerBorder : colors.successBorder,
+                  borderRadius: radius.md,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <TrendingUp
+                      size={13}
+                      color={isNegative ? colors.dangerDark : colors.successDark}
+                    />
+                    <Text
+                      style={{
+                        fontFamily: fonts.bodySemiBold,
+                        fontSize: 12,
+                        color: isNegative ? colors.dangerDark : colors.successDark,
+                      }}
+                    >
+                      {locale === 'pt-BR' ? 'Margem real (interno)' : 'Real margin (internal)'}
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: fonts.monoMedium,
+                      fontSize: 10.5,
+                      color: colors.textSecondary,
+                    }}
+                  >
+                    {locale === 'pt-BR' ? 'Custo peças: ' : 'Parts cost: '}
+                    {formatCurrency(actualParts)}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text
+                    style={{
+                      fontFamily: fonts.monoBold,
+                      fontSize: 13,
+                      color: isNegative ? colors.dangerDark : colors.successDark,
+                    }}
+                  >
+                    {netProfit < 0
+                      ? `- ${formatCurrency(Math.abs(netProfit))}`
+                      : formatCurrency(netProfit)}
+                  </Text>
+                  {revenue > 0 ? (
+                    <Text
+                      style={{
+                        fontFamily: fonts.monoMedium,
+                        fontSize: 10,
+                        color: isNegative ? colors.dangerDark : colors.successDark,
+                      }}
+                    >
+                      {marginPct}%
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })() : null}
+
           <View style={styles.metaPillsRow}>
             <View style={styles.metaPill}>
               <ShieldCheck size={13} color={colors.textSecondary} />
@@ -1164,6 +1251,12 @@ export default function ApplianceDetailScreen() {
         onRequestClose={() => setCancelModalOpen(false)}
       >
         <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setCancelModalOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+          />
           <Card style={styles.cancelModalCard}>
             <Text style={styles.cardSectionTitle}>
               {locale === 'pt-BR' ? 'Cancelar aparelho' : 'Cancel item'}

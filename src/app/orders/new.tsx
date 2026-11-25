@@ -39,29 +39,9 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CustomerResponse, Voltage } from '@/types/api';
+import { DEFAULT_APPLIANCE_TYPES } from '@/constants/appliances';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
 import { shareOrderLabelsPdf } from '@/utils/labelPrintPdf';
-
-const DEFAULT_APPLIANCE_TYPES = [
-  'Micro-ondas',
-  'Air Fryer',
-  'Liquidificador',
-  'Ventilador',
-  'Aspirador',
-  'Batedeira',
-  'Cafeteira',
-  'Ferro de Passar',
-  'Forno Elétrico',
-  'Panela Elétrica',
-  'Sanduicheira / Grill',
-  'Processador',
-  'Secador de Cabelo',
-  'Chapinha',
-  'Torradeira',
-  'Chaleira Elétrica',
-  'Bebedouro',
-  'Umidificador',
-];
 
 const VOLTAGE_OPTIONS: Voltage[] = ['V110', 'V220', 'BIVOLT', 'BATTERY'];
 
@@ -284,7 +264,13 @@ export default function NewOrderScreen() {
         locale === 'pt-BR'
           ? `Etiquetas físicas geradas: ${tagsList}${photoWarning}\n\nDeseja enviar o comprovante com todos os aparelhos no WhatsApp?`
           : `Generated bench tags: ${tagsList}${photoWarning}\n\nSend the intake receipt via WhatsApp?`,
-        alertActions
+        alertActions,
+        {
+          cancelable: true,
+          onDismiss: () => {
+            router.replace('/(tabs)/workbench');
+          },
+        }
       );
     },
     onError: (err) => {

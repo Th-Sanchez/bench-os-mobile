@@ -219,8 +219,10 @@ export interface ServiceOrderItemResponse {
   status: ItemStatus;
   laborCost: number;
   partsCost: number;
+  partsCostActual: number;
   discount: number;
   totalPrice: number;
+  estimatedNetProfit: number;
   estimatedCompletionDate: string | null;
   warrantyDays: number;
   cancellationReason: string | null;
@@ -285,8 +287,41 @@ export interface UpdateItemQuoteRequest {
   technicalDiagnosis?: string;
   laborCost: number;
   partsCost: number;
+  partsCostActual?: number;
   discount: number;
   warrantyDays?: number;
+}
+
+export interface PartCatalogResponse {
+  id: string;
+  name: string;
+  applianceCategory: string | null;
+  averageCost: number;
+  suggestedPrice: number;
+  unitProfit: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertPartCatalogRequest {
+  name: string;
+  applianceCategory?: string;
+  averageCost: number;
+  suggestedPrice: number;
+  notes?: string;
+}
+
+export interface RepairProfitabilityResponse {
+  periodStart: string;
+  periodEnd: string;
+  zone: string;
+  deliveredItemsCount: number;
+  itemsWithPartsCostCount: number;
+  totalRevenue: number;
+  totalPartsCostActual: number;
+  estimatedNetProfit: number;
+  profitMarginPercent: number;
 }
 
 export interface TransitionItemStatusRequest {

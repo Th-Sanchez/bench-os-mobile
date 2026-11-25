@@ -134,6 +134,7 @@ export default function DeliverItemScreen() {
       void queryClient.invalidateQueries({ queryKey: ['finance-summary'] });
       void queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
       void queryClient.invalidateQueries({ queryKey: ['finance-daily-closing'] });
+      void queryClient.invalidateQueries({ queryKey: ['orders-profitability'] });
       void queryClient.invalidateQueries({ queryKey: ['item-payments', itemId] });
 
       setDeliveredReceipt({

@@ -102,6 +102,12 @@ export function WhatsappStageModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={[styles.backdrop, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+        />
         <View style={styles.sheet}>
           <View style={styles.header}>
             <View style={styles.titleRow}>

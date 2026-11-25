@@ -27,10 +27,11 @@ import {
   Lock,
   Minus,
   Plus,
+  TrendingUp,
   Wallet,
   X,
 } from 'lucide-react-native';
-import { financeApi } from '@/api/endpoints';
+import { financeApi, ordersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { DailyCashClosingModal } from '@/components/finance/DailyCashClosingModal';
 import { PayTransactionModal } from '@/components/finance/PayTransactionModal';
@@ -187,6 +188,12 @@ export default function FinanceDashboardScreen() {
     enabled: isOwner,
   });
 
+  const profitabilityQuery = useQuery({
+    queryKey: ['orders-profitability', from, to, deviceZone],
+    queryFn: () => ordersApi.getProfitability({ from, to, zone: deviceZone }),
+    enabled: isOwner,
+  });
+
   const shiftMonth = (delta: number) => {
     const next = new Date(selectedYear, selectedMonth + delta, 1);
     setSelectedYear(next.getFullYear());
@@ -199,6 +206,7 @@ export default function FinanceDashboardScreen() {
       transactionsQuery.refetch(),
       pendingPayablesQuery.refetch(),
       dailyClosingQuery.refetch(),
+      profitabilityQuery.refetch(),
     ]);
   };
 
@@ -265,6 +273,7 @@ export default function FinanceDashboardScreen() {
 
   const summary = summaryQuery.data;
   const dailyClosing = dailyClosingQuery.data;
+  const profitability = profitabilityQuery.data;
   const transactions = transactionsQuery.data?.content ?? [];
   const pendingPayables = pendingPayablesQuery.data?.content ?? [];
   const visibleTransactions = showAllTransactions ? transactions : transactions.slice(0, 6);
@@ -274,7 +283,8 @@ export default function FinanceDashboardScreen() {
     summaryQuery.isRefetching ||
     transactionsQuery.isRefetching ||
     pendingPayablesQuery.isRefetching ||
-    dailyClosingQuery.isRefetching;
+    dailyClosingQuery.isRefetching ||
+    profitabilityQuery.isRefetching;
 
   const totalIncomePaid = summary?.totalIncomePaid ?? 0;
   const totalExpensePaid = summary?.totalExpensePaid ?? 0;
@@ -536,6 +546,101 @@ export default function FinanceDashboardScreen() {
               </View>
             </View>
           </Pressable>
+
+          {/* Real Repair Margin Card ('Margem Real dos Reparos') */}
+          {profitability && profitability.deliveredItemsCount > 0 ? (
+            <View style={styles.todayCard}>
+              <View style={styles.todayHeaderRow}>
+                <View style={styles.todayTitleGroup}>
+                  <View
+                    style={[
+                      styles.todayIconBox,
+                      {
+                        backgroundColor:
+                          profitability.estimatedNetProfit < 0
+                            ? colors.dangerSoft
+                            : colors.successSoft,
+                      },
+                    ]}
+                  >
+                    <TrendingUp
+                      size={15}
+                      color={
+                        profitability.estimatedNetProfit < 0
+                          ? colors.dangerDark
+                          : colors.successDark
+                      }
+                      strokeWidth={2.2}
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.todayOverline}>
+                      {locale === 'pt-BR' ? 'MARGEM REAL DOS REPAROS' : 'REAL REPAIR MARGIN'}
+                    </Text>
+                    <Text style={styles.todaySubmeta}>
+                      {locale === 'pt-BR'
+                        ? `${profitability.deliveredItemsCount} entregue(s) em ${monthLabel}`
+                        : `${profitability.deliveredItemsCount} delivered in ${monthLabel}`}
+                    </Text>
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.updatedBadge,
+                    profitability.estimatedNetProfit < 0 && {
+                      backgroundColor: colors.dangerSoft,
+                      borderColor: colors.dangerBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.updatedBadgeText,
+                      profitability.estimatedNetProfit < 0 && { color: colors.dangerDark },
+                    ]}
+                  >
+                    {Number(profitability.profitMarginPercent).toFixed(1)}%
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.todayBalanceRow}>
+                <Text
+                  style={[
+                    styles.todayBalanceValue,
+                    profitability.estimatedNetProfit < 0 && styles.heroBalanceNegative,
+                  ]}
+                >
+                  {profitability.estimatedNetProfit < 0
+                    ? `- ${formatCurrency(Math.abs(profitability.estimatedNetProfit))}`
+                    : formatCurrency(profitability.estimatedNetProfit)}
+                </Text>
+                <Text style={styles.todayBalanceCaption}>
+                  {locale === 'pt-BR' ? 'Lucro líquido estimado' : 'Estimated net profit'}
+                </Text>
+              </View>
+
+              <View style={styles.todayBreakdownRow}>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'Faturado OS' : 'Repairs rev.'}
+                  </Text>
+                  <Text style={styles.todayMiniValue} numberOfLines={1}>
+                    {formatCurrency(profitability.totalRevenue)}
+                  </Text>
+                </View>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'Custo peças' : 'Parts cost'}
+                  </Text>
+                  <Text style={[styles.todayMiniValue, { color: colors.dangerDark }]} numberOfLines={1}>
+                    - {formatCurrency(profitability.totalPartsCostActual)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
 
           {/* Supplier Store Credit Alert Card ('Contas a Pagar / Fiado') */}
           {hasPending ? (
@@ -876,14 +981,16 @@ export default function FinanceDashboardScreen() {
           if (exportingFormat === null) setExportMenuOpen(false);
         }}
       >
-        <Pressable
-          style={styles.exportBackdrop}
-          onPress={() => {
-            if (exportingFormat === null) setExportMenuOpen(false);
-          }}
-        >
+        <View style={styles.exportBackdrop}>
           <Pressable
-            onPress={(e) => e.stopPropagation()}
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (exportingFormat === null) setExportMenuOpen(false);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+          />
+          <View
             style={[
               styles.exportSheet,
               { paddingBottom: Math.max(insets.bottom + spacing.md, spacing.xxl) },
@@ -993,8 +1100,8 @@ export default function FinanceDashboardScreen() {
                 </Text>
               </View>
             </Pressable>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

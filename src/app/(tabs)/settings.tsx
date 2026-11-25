@@ -21,14 +21,16 @@ import {
   Info,
   KeyRound,
   LogOut,
+  Package,
   Plus,
   Printer,
   QrCode,
   Settings,
   X,
 } from 'lucide-react-native';
-import { tenantSettingsApi, usersApi } from '@/api/endpoints';
+import { partsCatalogApi, tenantSettingsApi, usersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
+import { PartsCatalogModal } from '@/components/settings/PartsCatalogModal';
 import { ResetMemberPasswordModal } from '@/components/settings/ResetMemberPasswordModal';
 import { TeamMemberModal } from '@/components/settings/TeamMemberModal';
 import { Button } from '@/components/ui/Button';
@@ -142,10 +144,20 @@ export default function SettingsScreen() {
   } | null>(null);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [resetPasswordMember, setResetPasswordMember] = useState<UserResponse | null>(null);
+  const [partsCatalogModalOpen, setPartsCatalogModalOpen] = useState(false);
+
+  const canManagePartsCatalog =
+    session?.user.role === 'OWNER' || session?.user.role === 'TECHNICIAN';
 
   const settingsQuery = useQuery({
     queryKey: ['tenant-settings'],
     queryFn: () => tenantSettingsApi.get(),
+  });
+
+  const partsCatalogQuery = useQuery({
+    queryKey: ['parts-catalog'],
+    queryFn: () => partsCatalogApi.list(),
+    enabled: canManagePartsCatalog,
   });
 
   const teamQuery = useQuery({
@@ -819,6 +831,42 @@ export default function SettingsScreen() {
           </View>
         ) : null}
 
+        {/* Section 2.4: Catálogo de Peças Comuns (OWNER & TECHNICIAN) */}
+        {canManagePartsCatalog ? (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.printHeaderTitleRow}>
+                <Package size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                <Text style={styles.cardOverline}>
+                  {locale === 'pt-BR' ? 'CATÁLOGO DE PEÇAS COMUNS' : 'COMMON PARTS CATALOG'}
+                </Text>
+              </View>
+              <Text style={styles.printModeBadge}>
+                {partsCatalogQuery.isLoading
+                  ? '...'
+                  : `${partsCatalogQuery.data?.length ?? 0}`}
+              </Text>
+            </View>
+
+            <Text style={styles.langSubtitle}>
+              {locale === 'pt-BR'
+                ? 'Cadastre peças frequentes (magnetron, fusível, capacitor, resistência) com custo médio e valor de repasse para orçar em 1 toque e calcular a margem real.'
+                : 'Register common parts with average cost and suggested price for 1-tap quoting and real margin tracking.'}
+            </Text>
+
+            <Button
+              label={
+                locale === 'pt-BR'
+                  ? 'Gerenciar catálogo de peças'
+                  : 'Manage parts catalog'
+              }
+              variant="secondary"
+              icon={<Package size={15} color={colors.textPrimary} />}
+              onPress={() => setPartsCatalogModalOpen(true)}
+            />
+          </View>
+        ) : null}
+
         {/* Section 2.5: Etiquetas & Impressão (Per-device configurable) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -1097,6 +1145,13 @@ export default function SettingsScreen() {
             onClose={() => setResetPasswordMember(null)}
           />
         </>
+      ) : null}
+
+      {canManagePartsCatalog ? (
+        <PartsCatalogModal
+          visible={partsCatalogModalOpen}
+          onClose={() => setPartsCatalogModalOpen(false)}
+        />
       ) : null}
     </SafeAreaView>
   );

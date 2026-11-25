@@ -32,8 +32,10 @@ import {
   wrapRouterErrorBoundary,
 } from '@/observability/sentry';
 import { colors } from '@/theme/tokens';
+import { configureAlertDefaults } from '@/utils/configureAlertDefaults';
 
 initSentry();
+configureAlertDefaults();
 void SplashScreen.preventAutoHideAsync();
 
 export const ErrorBoundary = wrapRouterErrorBoundary(AppErrorFallback);

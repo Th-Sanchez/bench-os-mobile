@@ -72,7 +72,13 @@ function PayTransactionBody({
 
   return (
     <View style={[styles.backdrop, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-        <View style={styles.sheet}>
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+      />
+      <View style={styles.sheet}>
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
               <CheckCircle2 size={18} color={colors.brandPrimary} />

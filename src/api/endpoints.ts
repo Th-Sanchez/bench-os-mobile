@@ -20,6 +20,7 @@ import type {
   MessageResponse,
   OrderItemQueueResponse,
   PageResponse,
+  PartCatalogResponse,
   PresignPhotoUploadRequest,
   PresignPhotoUploadResponse,
   PublicOrderResponse,
@@ -27,6 +28,7 @@ import type {
   RegisterItemPhotoRequest,
   RegisterPushTokenRequest,
   RegisterTenantRequest,
+  RepairProfitabilityResponse,
   ResetPasswordRequest,
   ServiceOrderItemResponse,
   ServiceOrderResponse,
@@ -40,6 +42,7 @@ import type {
   UpdateItemQuoteRequest,
   UpdateTenantSettingsRequest,
   UpsertCustomerRequest,
+  UpsertPartCatalogRequest,
   UpsertSupplierRequest,
   UserResponse,
   WhatsappLinkResponse,
@@ -150,6 +153,9 @@ export const ordersApi = {
   getByToken: (publicToken: string) =>
     apiRequest<ServiceOrderResponse>(`/api/v1/orders/by-token/${publicToken}`),
 
+  getProfitability: (params?: { from?: string; to?: string; zone?: string }) =>
+    apiRequest<RepairProfitabilityResponse>('/api/v1/orders/profitability', { query: params }),
+
   listBenchQueue: (params?: {
     status?: ItemStatus[];
     tag?: string;
@@ -193,6 +199,26 @@ export const ordersApi = {
 
   getWhatsappLink: (orderId: string, itemId: string) =>
     apiRequest<WhatsappLinkResponse>(`/api/v1/orders/${orderId}/items/${itemId}/whatsapp-link`),
+};
+
+export const partsCatalogApi = {
+  list: (params?: { query?: string; category?: string }) =>
+    apiRequest<PartCatalogResponse[]>('/api/v1/parts-catalog', { query: params }),
+
+  create: (payload: UpsertPartCatalogRequest) =>
+    apiRequest<PartCatalogResponse>('/api/v1/parts-catalog', { method: 'POST', body: payload }),
+
+  update: (id: string, payload: UpsertPartCatalogRequest) =>
+    apiRequest<PartCatalogResponse>(`/api/v1/parts-catalog/${id}`, {
+      method: 'PUT',
+      body: payload,
+    }),
+
+  remove: (id: string) =>
+    apiRequest<void>(`/api/v1/parts-catalog/${id}`, { method: 'DELETE' }),
+
+  seedDefaults: () =>
+    apiRequest<PartCatalogResponse[]>('/api/v1/parts-catalog/seed-defaults', { method: 'POST' }),
 };
 
 export const photosApi = {
