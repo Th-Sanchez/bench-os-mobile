@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,10 +16,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { MessageCircle, Search, UserPlus, Users, X } from 'lucide-react-native';
+import { BookUser, MessageCircle, Search, UserPlus, Users, X } from 'lucide-react-native';
 import { customersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { CustomerFormModal } from '@/components/customers/CustomerFormModal';
+import { PhoneContactsModal } from '@/components/customers/PhoneContactsModal';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
@@ -53,6 +56,7 @@ export default function CustomersScreen() {
   const [searchText, setSearchText] = useState('');
   const [filter, setFilter] = useState<CustomerFilter>('ALL');
   const [modalVisible, setModalVisible] = useState(false);
+  const [importModalVisible, setImportModalVisible] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerResponse | null>(null);
 
   const trimmedQuery = searchText.trim();
@@ -65,6 +69,18 @@ export default function CustomersScreen() {
   const allCustomers = useMemo(
     () => customersQuery.data ?? [],
     [customersQuery.data]
+  );
+
+  // Full unfiltered list used for accurate deduplication in the phone contacts importer
+  const allCustomersForDedupQuery = useQuery({
+    queryKey: ['customers', ''],
+    queryFn: () => customersApi.search(undefined),
+    enabled: importModalVisible,
+  });
+
+  const existingPhones = useMemo(
+    () => (allCustomersForDedupQuery.data ?? allCustomers).map((c) => c.phone),
+    [allCustomersForDedupQuery.data, allCustomers]
   );
 
   const displayedCustomers = useMemo(() => {
@@ -178,11 +194,24 @@ export default function CustomersScreen() {
                 <Text style={styles.shopOverline}>{shopName.toUpperCase()}</Text>
                 <Text style={styles.screenTitle}>{t.tabs.customers}</Text>
               </View>
-              <View style={styles.countBadge}>
-                <View style={styles.countDot} />
-                <Text style={styles.countText}>
-                  {allCustomers.length} {locale === 'pt-BR' ? 'ativos' : 'active'}
-                </Text>
+              <View style={styles.headerRightGroup}>
+                {Platform.OS !== 'web' ? (
+                  <Pressable
+                    onPress={() => setImportModalVisible(true)}
+                    style={({ pressed }) => [styles.importBadgeBtn, pressed && styles.btnPressed]}
+                  >
+                    <BookUser size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                    <Text style={styles.importBadgeText}>
+                      {locale === 'pt-BR' ? 'Agenda' : 'Contacts'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <View style={styles.countBadge}>
+                  <View style={styles.countDot} />
+                  <Text style={styles.countText}>
+                    {allCustomers.length} {locale === 'pt-BR' ? 'ativos' : 'active'}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -273,9 +302,18 @@ export default function CustomersScreen() {
               </Text>
               <Text style={styles.centerSub}>
                 {locale === 'pt-BR'
-                  ? 'Toque em "+ Novo Cliente" para cadastrar pelo telefone no balcão.'
-                  : 'Tap "+ New Customer" to register a customer by phone.'}
+                  ? 'Toque em "+ Novo Cliente" para cadastrar ou importe direto da agenda do celular.'
+                  : 'Tap "+ New Customer" to register or import directly from your phone contacts.'}
               </Text>
+              {!trimmedQuery && Platform.OS !== 'web' ? (
+                <Button
+                  label={locale === 'pt-BR' ? 'Importar da Agenda' : 'Import Contacts'}
+                  variant="secondary"
+                  fullWidth={false}
+                  icon={<BookUser size={16} color={colors.brandPrimary} />}
+                  onPress={() => setImportModalVisible(true)}
+                />
+              ) : null}
             </View>
           )
         }
@@ -296,6 +334,27 @@ export default function CustomersScreen() {
         visible={modalVisible}
         customer={editingCustomer}
         onClose={() => setModalVisible(false)}
+      />
+
+      <PhoneContactsModal
+        visible={importModalVisible}
+        mode="batch"
+        existingPhones={existingPhones}
+        onClose={() => setImportModalVisible(false)}
+        onBatchImported={({ importedCount, duplicatesSkipped }) => {
+          const msg =
+            locale === 'pt-BR'
+              ? duplicatesSkipped > 0
+                ? `${importedCount} ${importedCount === 1 ? 'cliente importado' : 'clientes importados'} (${duplicatesSkipped} já cadastrados ignorados).`
+                : `${importedCount} ${importedCount === 1 ? 'cliente importado' : 'clientes importados'} com sucesso!`
+              : duplicatesSkipped > 0
+                ? `${importedCount} imported (${duplicatesSkipped} duplicates skipped).`
+                : `${importedCount} customers imported successfully!`;
+          Alert.alert(
+            locale === 'pt-BR' ? 'Importação concluída' : 'Import completed',
+            msg
+          );
+        }}
       />
     </SafeAreaView>
   );
@@ -333,6 +392,27 @@ const styles = StyleSheet.create({
     fontSize: 24,
     letterSpacing: -0.5,
     color: colors.textPrimary,
+  },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  importBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1,
+    borderColor: colors.brandPrimaryBorder,
+    borderRadius: radius.pill,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  importBadgeText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.brandPrimary,
   },
   countBadge: {
     flexDirection: 'row',

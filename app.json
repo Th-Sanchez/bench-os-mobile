@@ -63,6 +63,12 @@
           "project": "benchos-mobile"
         }
       ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "BenchOS precisa acessar seus contatos para importar nome e telefone dos clientes mais rápido."
+        }
+      ],
       "expo-sharing"
     ],
     "experiments": {

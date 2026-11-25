@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Phone, StickyNote, Trash2, User, X } from 'lucide-react-native';
+import { BookUser, FileText, Phone, StickyNote, Trash2, User, X } from 'lucide-react-native';
 import { customersApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
+import { PhoneContactsModal } from '@/components/customers/PhoneContactsModal';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
@@ -74,6 +75,7 @@ function CustomerFormBody({
   );
   const [notes, setNotes] = useState(customer?.notes ?? '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [contactsPickerOpen, setContactsPickerOpen] = useState(false);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -194,6 +196,15 @@ function CustomerFormBody({
           </View>
         ) : null}
 
+        {!isEditing && Platform.OS !== 'web' ? (
+          <Button
+            label={locale === 'pt-BR' ? 'Importar da agenda do celular' : 'Import from phone contacts'}
+            variant="secondary"
+            onPress={() => setContactsPickerOpen(true)}
+            icon={<BookUser size={16} color={colors.brandPrimary} />}
+          />
+        ) : null}
+
         <TextField
           label={locale === 'pt-BR' ? 'Nome completo *' : 'Full name *'}
           placeholder="Ex: Maria Silva"
@@ -272,6 +283,17 @@ function CustomerFormBody({
             loading={saveMutation.isPending}
           />
         </View>
+
+      <PhoneContactsModal
+        visible={contactsPickerOpen}
+        mode="single"
+        onClose={() => setContactsPickerOpen(false)}
+        onSelectSingle={(picked) => {
+          setErrorMsg(null);
+          setName(picked.name);
+          setPhone(maskPhoneBR(picked.phone));
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }

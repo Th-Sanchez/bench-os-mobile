@@ -1,6 +1,8 @@
 import { apiRequest } from './http';
 import type {
   AuthResponse,
+  BatchImportCustomersRequest,
+  BatchImportCustomersResponse,
   CreateFinancialTransactionRequest,
   CreateServiceOrderRequest,
   CreateUserRequest,
@@ -118,6 +120,11 @@ export const customersApi = {
   get: (id: string) => apiRequest<CustomerResponse>(`/api/v1/customers/${id}`),
   create: (payload: UpsertCustomerRequest) =>
     apiRequest<CustomerResponse>('/api/v1/customers', { method: 'POST', body: payload }),
+  batchImport: (payload: BatchImportCustomersRequest) =>
+    apiRequest<BatchImportCustomersResponse>('/api/v1/customers/batch', {
+      method: 'POST',
+      body: payload,
+    }),
   update: (id: string, payload: UpsertCustomerRequest) =>
     apiRequest<CustomerResponse>(`/api/v1/customers/${id}`, { method: 'PUT', body: payload }),
   remove: (id: string) =>

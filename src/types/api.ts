@@ -176,6 +176,17 @@ export interface UpsertCustomerRequest {
   notes?: string;
 }
 
+export interface BatchImportCustomersRequest {
+  customers: UpsertCustomerRequest[];
+}
+
+export interface BatchImportCustomersResponse {
+  importedCount: number;
+  duplicatesSkipped: number;
+  invalidSkipped: number;
+  customers: CustomerResponse[];
+}
+
 // Order
 export interface CreateServiceOrderItemRequest {
   applianceType: string;
