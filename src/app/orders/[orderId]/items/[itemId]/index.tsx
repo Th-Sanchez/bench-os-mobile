@@ -24,19 +24,24 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
+  FileText,
   Lock,
   MessageCircle,
   MoreVertical,
   Pencil,
+  Printer,
+  RotateCcw,
   ShieldCheck,
   Trash2,
+  TrendingUp,
   User,
   X,
 } from 'lucide-react-native';
-import { ordersApi, photosApi } from '@/api/endpoints';
+import { financeApi, ordersApi, photosApi } from '@/api/endpoints';
 import { API_BASE_URL, ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
+import { WarrantyReturnModal } from '@/components/orders/WarrantyReturnModal';
 import {
   inferWhatsappStageFromStatuses,
   WhatsappStageModal,
@@ -46,9 +51,21 @@ import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TagBadge } from '@/components/ui/TagBadge';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ItemPhotoResponse, ItemStatus, PhotoStage } from '@/types/api';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
+import {
+  shareOrderIntakeTicketPdf,
+  shareOrderLabelsPdf,
+} from '@/utils/labelPrintPdf';
+import {
+  computeWarrantyInfo,
+  formatDateTime,
+  formatFullDate,
+  sendConsolidatedOrderReceiptWhatsapp,
+  shareConsolidatedOrderReceiptPdf,
+} from '@/utils/warrantyReceiptPdf';
 
 const PROGRESS_STEPS: { labelPt: string; labelEn: string }[] = [
   { labelPt: 'Recebido', labelEn: 'Received' },
@@ -85,6 +102,7 @@ export default function ApplianceDetailScreen() {
   const { session } = useAuth();
   const { orderId, itemId } = useLocalSearchParams<{ orderId: string; itemId: string }>();
   const { t, locale, formatCurrency, formatPhone, formatShortDate } = useI18n();
+  const { mode: printMode, isPrintEnabled } = usePrintPreferences();
 
   const canDoTechnicalWork =
     session?.user.role === 'OWNER' || session?.user.role === 'TECHNICIAN';
@@ -92,7 +110,10 @@ export default function ApplianceDetailScreen() {
   const [selectedPhotoStage, setSelectedPhotoStage] = useState<PhotoStage>('INTAKE');
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [warrantyReturnModalOpen, setWarrantyReturnModalOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [sharingPdf, setSharingPdf] = useState(false);
+  const [printingLabel, setPrintingLabel] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [previewPhoto, setPreviewPhoto] = useState<ItemPhotoResponse | null>(null);
@@ -114,6 +135,12 @@ export default function ApplianceDetailScreen() {
     () => order?.items.find((i) => i.id === itemId),
     [order, itemId]
   );
+
+  const itemPaymentsQuery = useQuery({
+    queryKey: ['item-payments', itemId],
+    queryFn: () => financeApi.listItemPayments(itemId),
+    enabled: Boolean(itemId) && item?.status === 'DELIVERED',
+  });
 
   const photosByStage = useMemo(() => {
     const grouped: Record<PhotoStage, ItemPhotoResponse[]> = {
@@ -143,6 +170,9 @@ export default function ApplianceDetailScreen() {
       setCancelReason('');
     },
     onError: (err) => {
+      if (err instanceof ApiError && (err.status === 409 || err.status === 422)) {
+        invalidateAll();
+      }
       Alert.alert(
         locale === 'pt-BR' ? 'Ação não permitida' : 'Action not allowed',
         err instanceof ApiError ? err.message : t.common.errorGeneric
@@ -204,6 +234,113 @@ export default function ApplianceDetailScreen() {
     void Linking.openURL(`${API_BASE_URL}/track/${publicToken}`);
   };
 
+  const handleSendWarrantyWhatsapp = async () => {
+    if (!order || !item || !session?.tenant) return;
+    try {
+      await sendConsolidatedOrderReceiptWhatsapp({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Não foi possível abrir o WhatsApp' : 'Could not open WhatsApp',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    }
+  };
+
+  const handleShareWarrantyPdf = async () => {
+    if (!order || !item || !session?.tenant) return;
+    setSharingPdf(true);
+    try {
+      await shareConsolidatedOrderReceiptPdf({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao gerar comprovante' : 'Could not generate receipt',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    } finally {
+      setSharingPdf(false);
+    }
+  };
+
+  const handlePrintMenu = () => {
+    if (!order || !item || !session?.tenant || printMode === 'DISABLED' || printingLabel) return;
+    const tenant = session.tenant;
+    const activeMode = printMode;
+
+    const runPrint = async (kind: 'single' | 'all' | 'intake') => {
+      setPrintingLabel(true);
+      try {
+        if (kind === 'intake') {
+          await shareOrderIntakeTicketPdf({ tenant, order, mode: activeMode, locale });
+        } else {
+          await shareOrderLabelsPdf({
+            tenant,
+            order,
+            items: kind === 'single' ? [item] : order.items,
+            mode: activeMode,
+            locale,
+          });
+        }
+      } catch (err) {
+        Alert.alert(
+          locale === 'pt-BR' ? 'Erro ao gerar etiqueta' : 'Could not generate label',
+          err instanceof Error ? err.message : t.common.errorGeneric
+        );
+      } finally {
+        setPrintingLabel(false);
+      }
+    };
+
+    const modeTag = activeMode === 'THERMAL_58MM' ? '58mm' : 'A4';
+    const buttons: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[] = [
+      {
+        text:
+          locale === 'pt-BR'
+            ? `Etiqueta deste aparelho (#${item.tag})`
+            : `This appliance label (#${item.tag})`,
+        onPress: () => {
+          void runPrint('single');
+        },
+      },
+    ];
+
+    if (order.items.length > 1) {
+      buttons.push({
+        text:
+          locale === 'pt-BR'
+            ? `Todas as etiquetas da OS (${order.items.length})`
+            : `All labels in Order (${order.items.length})`,
+        onPress: () => {
+          void runPrint('all');
+        },
+      });
+    }
+
+    buttons.push({
+      text: locale === 'pt-BR' ? 'Comprovante de Entrada' : 'Intake Ticket',
+      onPress: () => {
+        void runPrint('intake');
+      },
+    });
+    if (buttons.length < 3) {
+      buttons.push({ text: t.common.cancel, style: 'cancel' });
+    }
+
+    Alert.alert(
+      locale === 'pt-BR' ? `Imprimir (${modeTag})` : `Print (${modeTag})`,
+      undefined,
+      buttons,
+      { cancelable: true }
+    );
+  };
+
   const handleOverflowMenu = () => {
     if (!order || !item) return;
     const isTerminal =
@@ -219,6 +356,16 @@ export default function ApplianceDetailScreen() {
       },
     ];
 
+    if (isPrintEnabled) {
+      options.push({
+        text:
+          locale === 'pt-BR'
+            ? `Imprimir etiqueta / comprovante (${printMode === 'THERMAL_58MM' ? '58mm' : 'A4'})`
+            : `Print label / ticket (${printMode === 'THERMAL_58MM' ? '58mm' : 'A4'})`,
+        onPress: () => handlePrintMenu(),
+      });
+    }
+
     if (item.status === 'READY_FOR_PICKUP' || item.status === 'REJECTED') {
       options.push({
         text: locale === 'pt-BR' ? 'Marcar como Descartado (abandono)' : 'Mark as Discarded',
@@ -227,7 +374,7 @@ export default function ApplianceDetailScreen() {
       });
     }
 
-    if (!isTerminal) {
+    if (!isTerminal && options.length < 3) {
       options.push({
         text: locale === 'pt-BR' ? 'Cancelar aparelho' : 'Cancel item',
         style: 'destructive',
@@ -235,8 +382,10 @@ export default function ApplianceDetailScreen() {
       });
     }
 
-    options.push({ text: t.common.cancel, style: 'cancel' });
-    Alert.alert(`#${item.tag}`, undefined, options);
+    if (options.length < 3) {
+      options.push({ text: t.common.cancel, style: 'cancel' });
+    }
+    Alert.alert(`#${item.tag}`, undefined, options, { cancelable: true });
   };
 
   if (orderQuery.isLoading) {
@@ -295,6 +444,25 @@ export default function ApplianceDetailScreen() {
               <Text style={styles.terminalText}>
                 {locale === 'pt-BR' ? 'Em diagnóstico técnico' : 'Diagnosing on bench'}
               </Text>
+            </View>
+          );
+        }
+        if (item.warrantyReturn && Number(item.totalPrice) === 0) {
+          return (
+            <View style={styles.dualDecisionRow}>
+              <Button
+                label={locale === 'pt-BR' ? 'Orçamento' : 'Quote'}
+                variant="secondary"
+                loading={busy}
+                onPress={() => transitionMutation.mutate({ status: 'QUOTE_SENT' })}
+                style={styles.decisionHalfBtn}
+              />
+              <Button
+                label={locale === 'pt-BR' ? 'Coberto (R$ 0)' : 'Covered ($0)'}
+                loading={busy}
+                onPress={() => transitionMutation.mutate({ status: 'APPROVED' })}
+                style={styles.decisionHalfBtn}
+              />
             </View>
           );
         }
@@ -407,6 +575,15 @@ export default function ApplianceDetailScreen() {
             style={styles.primaryBarBtn}
           />
         );
+      case 'DELIVERED':
+        return (
+          <Button
+            label={locale === 'pt-BR' ? 'Enviar Comprovante' : 'Send Receipt'}
+            icon={<MessageCircle size={17} color={colors.textOnDark} />}
+            onPress={() => void handleSendWarrantyWhatsapp()}
+            style={styles.primaryBarBtn}
+          />
+        );
       default:
         return (
           <View style={styles.terminalChip}>
@@ -427,9 +604,26 @@ export default function ApplianceDetailScreen() {
           <TagBadge label={`#${item.tag}`} variant="dark" />
           <TagBadge label={t.voltage[item.voltage]} variant="subtle" />
         </View>
-        <Pressable onPress={handleOverflowMenu} style={styles.navIconBtn} hitSlop={8}>
-          <MoreVertical size={20} color={colors.textPrimary} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          {isPrintEnabled ? (
+            <Pressable
+              disabled={printingLabel}
+              onPress={handlePrintMenu}
+              style={styles.navIconBtn}
+              hitSlop={8}
+              accessibilityLabel={locale === 'pt-BR' ? 'Imprimir etiqueta' : 'Print label'}
+            >
+              {printingLabel ? (
+                <ActivityIndicator size="small" color={colors.brandPrimary} />
+              ) : (
+                <Printer size={19} color={colors.brandPrimary} />
+              )}
+            </Pressable>
+          ) : null}
+          <Pressable onPress={handleOverflowMenu} style={styles.navIconBtn} hitSlop={8}>
+            <MoreVertical size={20} color={colors.textPrimary} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -453,6 +647,37 @@ export default function ApplianceDetailScreen() {
               <StatusBadge status={item.status} />
               <Text style={styles.orderNumberMono}>OS #{order.orderNumber}</Text>
             </View>
+
+            {item.warrantyReturn ? (
+              <Pressable
+                disabled={!item.parentOrderId || !item.parentItemId}
+                onPress={() => {
+                  if (item.parentOrderId && item.parentItemId) {
+                    router.push({
+                      pathname: '/orders/[orderId]/items/[itemId]',
+                      params: { orderId: item.parentOrderId, itemId: item.parentItemId },
+                    });
+                  }
+                }}
+                style={styles.warrantyReturnBanner}
+              >
+                <View style={styles.warrantyReturnBannerLeft}>
+                  <RotateCcw size={14} color={colors.warningDark} />
+                  <Text style={styles.warrantyReturnBannerText}>
+                    {item.parentItemTag
+                      ? locale === 'pt-BR'
+                        ? `Retorno em Garantia · Ref. #${item.parentItemTag}`
+                        : `Warranty Return · Ref. #${item.parentItemTag}`
+                      : locale === 'pt-BR'
+                        ? 'Retorno em Garantia'
+                        : 'Warranty Return'}
+                  </Text>
+                </View>
+                {item.parentOrderId && item.parentItemId ? (
+                  <ChevronRight size={14} color={colors.warningDark} />
+                ) : null}
+              </Pressable>
+            ) : null}
 
             <Text style={styles.applianceTitle}>{applianceTitle}</Text>
 
@@ -494,7 +719,15 @@ export default function ApplianceDetailScreen() {
 
           {/* Customer strip */}
           <View style={styles.customerStrip}>
-            <View style={styles.customerLeft}>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/customers/[customerId]',
+                  params: { customerId: order.customerId },
+                })
+              }
+              style={styles.customerLeft}
+            >
               <View style={styles.customerIconBox}>
                 <User size={15} color={colors.brandPrimary} />
               </View>
@@ -502,7 +735,7 @@ export default function ApplianceDetailScreen() {
                 <Text style={styles.customerName}>{order.customerName ?? '—'}</Text>
                 <Text style={styles.customerPhone}>{formatPhone(order.customerPhone)}</Text>
               </View>
-            </View>
+            </Pressable>
             <Pressable
               onPress={() => openPublicTrackingWeb(order.publicToken)}
               style={styles.publicLinkChip}
@@ -716,6 +949,87 @@ export default function ApplianceDetailScreen() {
             <Text style={styles.totalAmount}>{formatCurrency(item.totalPrice)}</Text>
           </View>
 
+          {session?.user.role === 'OWNER' &&
+          (Number(item.totalPrice) > 0 || Number(item.partsCostActual) > 0) ? (() => {
+            const revenue = Number(item.totalPrice) || 0;
+            const actualParts = Number(item.partsCostActual) || 0;
+            const netProfit =
+              typeof item.estimatedNetProfit === 'number'
+                ? item.estimatedNetProfit
+                : revenue - actualParts;
+            const marginPct = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
+            const isNegative = netProfit < 0;
+
+            return (
+              <View
+                style={{
+                  backgroundColor: isNegative ? colors.dangerSoft : colors.successSoft,
+                  borderWidth: 1,
+                  borderColor: isNegative ? colors.dangerBorder : colors.successBorder,
+                  borderRadius: radius.md,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <TrendingUp
+                      size={13}
+                      color={isNegative ? colors.dangerDark : colors.successDark}
+                    />
+                    <Text
+                      style={{
+                        fontFamily: fonts.bodySemiBold,
+                        fontSize: 12,
+                        color: isNegative ? colors.dangerDark : colors.successDark,
+                      }}
+                    >
+                      {locale === 'pt-BR' ? 'Margem real (interno)' : 'Real margin (internal)'}
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: fonts.monoMedium,
+                      fontSize: 10.5,
+                      color: colors.textSecondary,
+                    }}
+                  >
+                    {locale === 'pt-BR' ? 'Custo peças: ' : 'Parts cost: '}
+                    {formatCurrency(actualParts)}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text
+                    style={{
+                      fontFamily: fonts.monoBold,
+                      fontSize: 13,
+                      color: isNegative ? colors.dangerDark : colors.successDark,
+                    }}
+                  >
+                    {netProfit < 0
+                      ? `- ${formatCurrency(Math.abs(netProfit))}`
+                      : formatCurrency(netProfit)}
+                  </Text>
+                  {revenue > 0 ? (
+                    <Text
+                      style={{
+                        fontFamily: fonts.monoMedium,
+                        fontSize: 10,
+                        color: isNegative ? colors.dangerDark : colors.successDark,
+                      }}
+                    >
+                      {marginPct}%
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })() : null}
+
           <View style={styles.metaPillsRow}>
             <View style={styles.metaPill}>
               <ShieldCheck size={13} color={colors.textSecondary} />
@@ -736,6 +1050,144 @@ export default function ApplianceDetailScreen() {
             ) : null}
           </View>
         </Card>
+
+        {/* Delivered Warranty & Receipt Card */}
+        {item.status === 'DELIVERED' ? (() => {
+          const warranty = computeWarrantyInfo(item);
+          const payments = itemPaymentsQuery.data ?? [];
+          return (
+            <Card
+              accentBorderColor={
+                warranty.hasWarranty
+                  ? warranty.isActive
+                    ? colors.successBorder
+                    : colors.dangerBorder
+                  : colors.borderSubtle
+              }
+              style={styles.warrantyCard}
+            >
+              <View style={styles.sectionHeaderBetween}>
+                <View style={styles.warrantyCardHeaderLeft}>
+                  <ShieldCheck
+                    size={16}
+                    color={
+                      warranty.hasWarranty
+                        ? warranty.isActive
+                          ? colors.successDark
+                          : colors.danger
+                        : colors.textSecondary
+                    }
+                  />
+                  <Text style={styles.cardSectionTitle}>
+                    {locale === 'pt-BR' ? 'Entrega & Garantia' : 'Delivery & Warranty'}
+                  </Text>
+                </View>
+
+                {warranty.hasWarranty ? (
+                  <View
+                    style={[
+                      styles.warrantyStatusPill,
+                      warranty.isActive
+                        ? styles.warrantyStatusActive
+                        : styles.warrantyStatusExpired,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.warrantyStatusText,
+                        warranty.isActive
+                          ? styles.warrantyStatusTextActive
+                          : styles.warrantyStatusTextExpired,
+                      ]}
+                    >
+                      {warranty.isActive
+                        ? locale === 'pt-BR'
+                          ? `${warranty.daysRemaining} de ${warranty.warrantyDays}d restantes`
+                          : `${warranty.daysRemaining}/${warranty.warrantyDays}d left`
+                        : locale === 'pt-BR'
+                          ? 'Expirada'
+                          : 'Expired'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.priceRows}>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>
+                    {locale === 'pt-BR' ? 'Entregue em' : 'Delivered on'}
+                  </Text>
+                  <Text style={styles.priceValue}>
+                    {formatDateTime(warranty.deliveredDate, locale)}
+                  </Text>
+                </View>
+                {warranty.hasWarranty && warranty.expiryDate ? (
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>
+                      {locale === 'pt-BR' ? 'Garantia válida até' : 'Warranty valid until'}
+                    </Text>
+                    <Text style={styles.warrantyExpiryValue}>
+                      {formatFullDate(warranty.expiryDate, locale)}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>
+                      {locale === 'pt-BR' ? 'Cobertura' : 'Coverage'}
+                    </Text>
+                    <Text style={styles.priceValue}>
+                      {locale === 'pt-BR' ? 'Devolução sem garantia' : 'No warranty'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {payments.length > 0 ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.priceRows}>
+                    <Text style={styles.sectionOverline}>
+                      {locale === 'pt-BR' ? 'PAGAMENTO CONFIRMADO' : 'CONFIRMED PAYMENT'}
+                    </Text>
+                    {payments.map((part, idx) => (
+                      <View key={`${part.paymentMethod}-${idx}`} style={styles.priceRow}>
+                        <Text style={styles.priceLabel}>
+                          {t.paymentMethod[part.paymentMethod]}
+                        </Text>
+                        <Text style={styles.priceValue}>{formatCurrency(part.amount)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+
+              <View style={styles.divider} />
+              <View style={styles.warrantyActionGroup}>
+                <Button
+                  label={
+                    locale === 'pt-BR'
+                      ? 'Abrir Retorno de Garantia'
+                      : 'Open Warranty Return'
+                  }
+                  variant="secondary"
+                  icon={<RotateCcw size={15} color={colors.brandPrimary} />}
+                  onPress={() => setWarrantyReturnModalOpen(true)}
+                />
+                <Button
+                  label={
+                    locale === 'pt-BR'
+                      ? `Compartilhar arquivo PDF (OS #${order.orderNumber})`
+                      : `Share PDF file (Order #${order.orderNumber})`
+                  }
+                  variant="secondary"
+                  loading={sharingPdf}
+                  icon={<FileText size={15} color={colors.brandPrimary} />}
+                  onPress={() => void handleShareWarrantyPdf()}
+                />
+              </View>
+            </Card>
+          );
+        })() : null}
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
@@ -774,6 +1226,23 @@ export default function ApplianceDetailScreen() {
         onClose={() => setQuoteModalOpen(false)}
       />
 
+      {/* Warranty Return Modal */}
+      <WarrantyReturnModal
+        visible={warrantyReturnModalOpen}
+        orderId={order.id}
+        item={item}
+        onClose={() => setWarrantyReturnModalOpen(false)}
+        onCreated={(createdOrder) => {
+          const createdItem = createdOrder.items[0];
+          if (createdItem) {
+            router.push({
+              pathname: '/orders/[orderId]/items/[itemId]',
+              params: { orderId: createdOrder.id, itemId: createdItem.id },
+            });
+          }
+        }}
+      />
+
       {/* Cancellation Reason Modal */}
       <Modal
         visible={cancelModalOpen}
@@ -782,6 +1251,12 @@ export default function ApplianceDetailScreen() {
         onRequestClose={() => setCancelModalOpen(false)}
       >
         <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setCancelModalOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+          />
           <Card style={styles.cancelModalCard}>
             <Text style={styles.cardSectionTitle}>
               {locale === 'pt-BR' ? 'Cancelar aparelho' : 'Cancel item'}
@@ -1342,5 +1817,68 @@ const styles = StyleSheet.create({
   photoViewerImage: {
     flex: 1,
     width: '100%',
+  },
+  warrantyCard: {
+    gap: 10,
+  },
+  warrantyCardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  warrantyStatusPill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  warrantyStatusActive: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.successBorder,
+  },
+  warrantyStatusExpired: {
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.dangerBorder,
+  },
+  warrantyStatusText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+  },
+  warrantyStatusTextActive: {
+    color: colors.successDark,
+  },
+  warrantyStatusTextExpired: {
+    color: colors.dangerDark,
+  },
+  warrantyExpiryValue: {
+    fontFamily: fonts.monoBold,
+    fontSize: 13,
+    color: colors.infoDark,
+  },
+  warrantyActionGroup: {
+    gap: 8,
+  },
+  warrantyReturnBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: colors.warningSoft,
+    borderWidth: 1,
+    borderColor: colors.warningBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  warrantyReturnBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    flex: 1,
+  },
+  warrantyReturnBannerText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.warningDark,
   },
 });

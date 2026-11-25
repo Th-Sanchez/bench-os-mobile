@@ -1,8 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/api/endpoints';
 import { setApiAccessToken, setUnauthorizedHandler } from '@/api/http';
 import { unregisterCurrentDevicePushToken } from '@/notifications/pushNotifications';
 import { captureHandledException, setSentryUserContext } from '@/observability/sentry';
+import { clearPersistedQueryCache } from '@/offline/queryPersistence';
 import type {
   AuthResponse,
   LoginRequest,
@@ -38,34 +40,47 @@ function isSessionExpired(expiresAt: string): boolean {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isHydrating, setIsHydrating] = useState(true);
 
-  const persistSession = useCallback(async (auth: AuthResponse) => {
-    const next: AuthSession = {
-      accessToken: auth.accessToken,
-      expiresAt: auth.expiresAt,
-      user: auth.user,
-      tenant: auth.tenant,
-    };
-    setApiAccessToken(next.accessToken);
-    setSentryUserContext({
-      userId: next.user.id,
-      role: next.user.role,
-      tenantId: next.tenant.id,
-      tenantName: next.tenant.name,
-    });
-    setSession(next);
-    await saveSessionJson(JSON.stringify(next));
-  }, []);
+  const persistSession = useCallback(
+    async (auth: AuthResponse) => {
+      const next: AuthSession = {
+        accessToken: auth.accessToken,
+        expiresAt: auth.expiresAt,
+        user: auth.user,
+        tenant: auth.tenant,
+      };
+      // Purge any previously cached tenant data before switching accounts
+      queryClient.clear();
+      await clearPersistedQueryCache();
+
+      setApiAccessToken(next.accessToken);
+      setSentryUserContext({
+        userId: next.user.id,
+        role: next.user.role,
+        tenantId: next.tenant.id,
+        tenantName: next.tenant.name,
+      });
+      setSession(next);
+      await saveSessionJson(JSON.stringify(next));
+    },
+    [queryClient]
+  );
 
   const signOut = useCallback(async () => {
-    await unregisterCurrentDevicePushToken();
+    try {
+      await unregisterCurrentDevicePushToken();
+    } catch {
+      // Ignore push-token unregister network errors when logging out offline
+    }
     setApiAccessToken(null);
     setSentryUserContext(null);
     setSession(null);
-    await clearSessionJson();
-  }, []);
+    queryClient.clear();
+    await Promise.all([clearSessionJson(), clearPersistedQueryCache()]);
+  }, [queryClient]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -92,13 +107,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSession(parsed);
           } else {
             setSentryUserContext(null);
-            await clearSessionJson();
+            await Promise.all([clearSessionJson(), clearPersistedQueryCache()]);
           }
         }
       } catch (err) {
         captureHandledException(err, { 'error.source': 'session_hydration' });
         setSentryUserContext(null);
-        await clearSessionJson();
+        await Promise.all([clearSessionJson(), clearPersistedQueryCache()]);
       } finally {
         if (active) setIsHydrating(false);
       }

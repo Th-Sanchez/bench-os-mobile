@@ -2,8 +2,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { isRunningInExpoGo } from 'expo';
-import * as Notifications from 'expo-notifications';
-import { AndroidImportance } from 'expo-notifications';
+import type * as NotificationsModule from 'expo-notifications';
 import { usersApi } from '@/api/endpoints';
 import { captureHandledException } from '@/observability/sentry';
 import type { DevicePlatform } from '@/types/api';
@@ -25,11 +24,36 @@ export interface PushRegistrationOutcome {
 
 let activePushTokenRef: string | null = null;
 let handlerConfigured = false;
+let notificationsPromise: Promise<typeof NotificationsModule> | null = null;
 
-export function configureForegroundNotificationHandler(): void {
-  if (handlerConfigured || Platform.OS === 'web') return;
+export function isPushSupportedInRuntime(): boolean {
+  if (Platform.OS === 'web') return false;
+  if (!Device.isDevice) return false;
+  // Remote push notifications are not supported inside Expo Go on Android (SDK 53+).
+  if (Platform.OS === 'android' && isRunningInExpoGo()) return false;
+  return true;
+}
+
+/**
+ * Lazy-loads `expo-notifications` only on runtimes that support remote push,
+ * preventing Expo Go (Android SDK 53+) from emitting side-effect startup warnings.
+ */
+export async function loadNotificationsModule(): Promise<typeof NotificationsModule | null> {
+  if (!isPushSupportedInRuntime()) {
+    return null;
+  }
+  if (!notificationsPromise) {
+    notificationsPromise = import('expo-notifications');
+  }
+  return notificationsPromise;
+}
+
+export async function configureForegroundNotificationHandler(): Promise<void> {
+  if (handlerConfigured || !isPushSupportedInRuntime()) return;
+  const Notifications = await loadNotificationsModule();
+  if (!Notifications || handlerConfigured) return;
+
   handlerConfigured = true;
-
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -40,21 +64,15 @@ export function configureForegroundNotificationHandler(): void {
   });
 }
 
-export function isPushSupportedInRuntime(): boolean {
-  if (Platform.OS === 'web') return false;
-  if (!Device.isDevice) return false;
-  // Remote push notifications are not supported inside Expo Go on Android (SDK 53+).
-  if (Platform.OS === 'android' && isRunningInExpoGo()) return false;
-  return true;
-}
-
 export async function ensureAndroidNotificationChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
+  const Notifications = await loadNotificationsModule();
+  if (!Notifications) return;
 
   await Notifications.setNotificationChannelAsync(BENCHOS_NOTIFICATION_CHANNEL_ID, {
     name: 'Alertas da Bancada',
     description: 'Aprovações de orçamento, contas a pagar e prazos de OS.',
-    importance: AndroidImportance.HIGH,
+    importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 200, 250],
     lightColor: '#2563EB',
     sound: 'default',
@@ -70,11 +88,13 @@ function resolveDevicePlatform(): DevicePlatform {
 export async function registerDevicePushToken(
   requestPermission = true
 ): Promise<PushRegistrationOutcome> {
-  if (!isPushSupportedInRuntime()) {
+  const Notifications = await loadNotificationsModule();
+  if (!Notifications) {
     return { status: 'unsupported' };
   }
 
   try {
+    await configureForegroundNotificationHandler();
     // On Android 13+, create notification channel before requesting permissions.
     await ensureAndroidNotificationChannel();
 

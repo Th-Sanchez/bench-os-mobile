@@ -1,20 +1,26 @@
 import { apiRequest } from './http';
 import type {
   AuthResponse,
+  BatchImportCustomersRequest,
+  BatchImportCustomersResponse,
   CreateFinancialTransactionRequest,
   CreateServiceOrderRequest,
   CreateUserRequest,
+  CreateWarrantyReturnRequest,
   CustomerResponse,
+  DailyCashClosingResponse,
   DeliverItemRequest,
   FinancialSummaryResponse,
   FinancialTransactionResponse,
   ForgotPasswordRequest,
+  ItemPaymentSummaryResponse,
   ItemPhotoResponse,
   ItemStatus,
   LoginRequest,
   MessageResponse,
   OrderItemQueueResponse,
   PageResponse,
+  PartCatalogResponse,
   PresignPhotoUploadRequest,
   PresignPhotoUploadResponse,
   PublicOrderResponse,
@@ -22,6 +28,7 @@ import type {
   RegisterItemPhotoRequest,
   RegisterPushTokenRequest,
   RegisterTenantRequest,
+  RepairProfitabilityResponse,
   ResetPasswordRequest,
   ServiceOrderItemResponse,
   ServiceOrderResponse,
@@ -35,6 +42,7 @@ import type {
   UpdateItemQuoteRequest,
   UpdateTenantSettingsRequest,
   UpsertCustomerRequest,
+  UpsertPartCatalogRequest,
   UpsertSupplierRequest,
   UserResponse,
   WhatsappLinkResponse,
@@ -117,6 +125,11 @@ export const customersApi = {
   get: (id: string) => apiRequest<CustomerResponse>(`/api/v1/customers/${id}`),
   create: (payload: UpsertCustomerRequest) =>
     apiRequest<CustomerResponse>('/api/v1/customers', { method: 'POST', body: payload }),
+  batchImport: (payload: BatchImportCustomersRequest) =>
+    apiRequest<BatchImportCustomersResponse>('/api/v1/customers/batch', {
+      method: 'POST',
+      body: payload,
+    }),
   update: (id: string, payload: UpsertCustomerRequest) =>
     apiRequest<CustomerResponse>(`/api/v1/customers/${id}`, { method: 'PUT', body: payload }),
   remove: (id: string) =>
@@ -136,6 +149,12 @@ export const ordersApi = {
   }) => apiRequest<PageResponse<ServiceOrderResponse>>('/api/v1/orders', { query: params }),
 
   get: (id: string) => apiRequest<ServiceOrderResponse>(`/api/v1/orders/${id}`),
+
+  getByToken: (publicToken: string) =>
+    apiRequest<ServiceOrderResponse>(`/api/v1/orders/by-token/${publicToken}`),
+
+  getProfitability: (params?: { from?: string; to?: string; zone?: string }) =>
+    apiRequest<RepairProfitabilityResponse>('/api/v1/orders/profitability', { query: params }),
 
   listBenchQueue: (params?: {
     status?: ItemStatus[];
@@ -167,6 +186,12 @@ export const ordersApi = {
       body: payload ?? {},
     }),
 
+  openWarrantyReturn: (orderId: string, itemId: string, payload: CreateWarrantyReturnRequest) =>
+    apiRequest<ServiceOrderResponse>(`/api/v1/orders/${orderId}/items/${itemId}/warranty-return`, {
+      method: 'POST',
+      body: payload,
+    }),
+
   getOrderWhatsappLink: (orderId: string, stage?: WhatsappMessageStage) =>
     apiRequest<WhatsappLinkResponse>(`/api/v1/orders/${orderId}/whatsapp-link`, {
       query: stage ? { stage } : undefined,
@@ -174,6 +199,26 @@ export const ordersApi = {
 
   getWhatsappLink: (orderId: string, itemId: string) =>
     apiRequest<WhatsappLinkResponse>(`/api/v1/orders/${orderId}/items/${itemId}/whatsapp-link`),
+};
+
+export const partsCatalogApi = {
+  list: (params?: { query?: string; category?: string }) =>
+    apiRequest<PartCatalogResponse[]>('/api/v1/parts-catalog', { query: params }),
+
+  create: (payload: UpsertPartCatalogRequest) =>
+    apiRequest<PartCatalogResponse>('/api/v1/parts-catalog', { method: 'POST', body: payload }),
+
+  update: (id: string, payload: UpsertPartCatalogRequest) =>
+    apiRequest<PartCatalogResponse>(`/api/v1/parts-catalog/${id}`, {
+      method: 'PUT',
+      body: payload,
+    }),
+
+  remove: (id: string) =>
+    apiRequest<void>(`/api/v1/parts-catalog/${id}`, { method: 'DELETE' }),
+
+  seedDefaults: () =>
+    apiRequest<PartCatalogResponse[]>('/api/v1/parts-catalog/seed-defaults', { method: 'POST' }),
 };
 
 export const photosApi = {
@@ -206,6 +251,9 @@ export const publicOrderApi = {
 export const financeApi = {
   getSummary: (params?: { from?: string; to?: string }) =>
     apiRequest<FinancialSummaryResponse>('/api/v1/finance/summary', { query: params }),
+
+  getDailyClosing: (params?: { date?: string; zone?: string }) =>
+    apiRequest<DailyCashClosingResponse>('/api/v1/finance/daily-closing', { query: params }),
 
   listTransactions: (params?: {
     type?: TransactionType;
@@ -246,4 +294,7 @@ export const financeApi = {
 
   deleteSupplier: (id: string) =>
     apiRequest<void>(`/api/v1/finance/suppliers/${id}`, { method: 'DELETE' }),
+
+  listItemPayments: (itemId: string) =>
+    apiRequest<ItemPaymentSummaryResponse[]>(`/api/v1/finance/order-items/${itemId}/payments`),
 };

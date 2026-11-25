@@ -176,6 +176,17 @@ export interface UpsertCustomerRequest {
   notes?: string;
 }
 
+export interface BatchImportCustomersRequest {
+  customers: UpsertCustomerRequest[];
+}
+
+export interface BatchImportCustomersResponse {
+  importedCount: number;
+  duplicatesSkipped: number;
+  invalidSkipped: number;
+  customers: CustomerResponse[];
+}
+
 // Order
 export interface CreateServiceOrderItemRequest {
   applianceType: string;
@@ -208,8 +219,10 @@ export interface ServiceOrderItemResponse {
   status: ItemStatus;
   laborCost: number;
   partsCost: number;
+  partsCostActual: number;
   discount: number;
   totalPrice: number;
+  estimatedNetProfit: number;
   estimatedCompletionDate: string | null;
   warrantyDays: number;
   cancellationReason: string | null;
@@ -217,6 +230,10 @@ export interface ServiceOrderItemResponse {
   finishedAt: string | null;
   deliveredAt: string | null;
   discardedAt: string | null;
+  parentItemId: string | null;
+  parentOrderId: string | null;
+  parentItemTag: string | null;
+  warrantyReturn: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -253,16 +270,58 @@ export interface OrderItemQueueResponse {
   status: ItemStatus;
   totalPrice: number;
   estimatedCompletionDate: string | null;
+  finishedAt: string | null;
+  parentItemId: string | null;
+  warrantyReturn: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateWarrantyReturnRequest {
+  reportedIssue: string;
+  accessories?: string;
+  notes?: string;
 }
 
 export interface UpdateItemQuoteRequest {
   technicalDiagnosis?: string;
   laborCost: number;
   partsCost: number;
+  partsCostActual?: number;
   discount: number;
   warrantyDays?: number;
+}
+
+export interface PartCatalogResponse {
+  id: string;
+  name: string;
+  applianceCategory: string | null;
+  averageCost: number;
+  suggestedPrice: number;
+  unitProfit: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertPartCatalogRequest {
+  name: string;
+  applianceCategory?: string;
+  averageCost: number;
+  suggestedPrice: number;
+  notes?: string;
+}
+
+export interface RepairProfitabilityResponse {
+  periodStart: string;
+  periodEnd: string;
+  zone: string;
+  deliveredItemsCount: number;
+  itemsWithPartsCostCount: number;
+  totalRevenue: number;
+  totalPartsCostActual: number;
+  estimatedNetProfit: number;
+  profitMarginPercent: number;
 }
 
 export interface TransitionItemStatusRequest {
@@ -405,4 +464,23 @@ export interface FinancialSummaryResponse {
   totalOverduePayables: number;
   incomeByPaymentMethod: Partial<Record<TransactionPaymentMethod, number>>;
   expenseByCategory: Partial<Record<TransactionCategory, number>>;
+}
+
+export interface DailyCashClosingResponse {
+  date: string;
+  zone: string;
+  totalIncomePaid: number;
+  totalExpensePaid: number;
+  netCashFlow: number;
+  incomeCount: number;
+  expenseCount: number;
+  incomeByPaymentMethod: Partial<Record<TransactionPaymentMethod, number>>;
+  expenseByPaymentMethod: Partial<Record<TransactionPaymentMethod, number>>;
+  transactions: FinancialTransactionResponse[];
+}
+
+export interface ItemPaymentSummaryResponse {
+  paymentMethod: TransactionPaymentMethod;
+  amount: number;
+  paidAt: string;
 }

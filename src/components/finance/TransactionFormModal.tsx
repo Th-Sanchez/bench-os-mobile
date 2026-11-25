@@ -143,6 +143,7 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
         queryClient.invalidateQueries({ queryKey: ['finance-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['finance-transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['finance-pending'] }),
+        queryClient.invalidateQueries({ queryKey: ['finance-daily-closing'] }),
       ]);
       onClose();
     },
@@ -220,9 +221,15 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
 
   return (
     <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
-        <View
-          style={[
-            styles.sheet,
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+      />
+      <View
+        style={[
+          styles.sheet,
             {
               paddingBottom: isKeyboardVisible
                 ? spacing.lg

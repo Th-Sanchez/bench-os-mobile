@@ -141,6 +141,15 @@ export function SuppliersModal({ visible, onClose }: SuppliersModalProps) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => {
+            resetForm();
+            onClose();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+        />
         <View
           style={[
             styles.sheet,

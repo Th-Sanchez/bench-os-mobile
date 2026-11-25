@@ -62,7 +62,22 @@
           "organization": "benchos-xi",
           "project": "benchos-mobile"
         }
-      ]
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "BenchOS precisa acessar seus contatos para importar nome e telefone dos clientes mais rápido."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "BenchOS precisa da câmera para ler o QR Code das etiquetas de aparelhos na bancada.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

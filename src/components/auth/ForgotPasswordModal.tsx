@@ -169,6 +169,12 @@ function ForgotPasswordBody({
 
   return (
     <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+      />
       <View
         style={[
           styles.sheet,

@@ -13,17 +13,35 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Plus, Trash2, User, X } from 'lucide-react-native';
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  MessageCircle,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  User,
+  X,
+} from 'lucide-react-native';
 import { ordersApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
+import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TagBadge } from '@/components/ui/TagBadge';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
-import type { OrderPaymentMethod } from '@/types/api';
+import type { OrderPaymentMethod, ServiceOrderItemResponse } from '@/types/api';
 import { formatCurrencyInput, maskCurrencyBRL, parseCurrencyBRL } from '@/utils/masks';
+import {
+  computeWarrantyInfo,
+  formatFullDate,
+  sendConsolidatedOrderReceiptWhatsapp,
+  shareConsolidatedOrderReceiptPdf,
+  type ReceiptPaymentPart,
+} from '@/utils/warrantyReceiptPdf';
 
 const PAYMENT_METHODS: OrderPaymentMethod[] = ['PIX', 'CREDIT_CARD', 'DEBIT_CARD', 'CASH'];
 
@@ -38,8 +56,15 @@ export default function DeliverItemScreen() {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const isKeyboardVisible = useKeyboardVisible();
+  const { session } = useAuth();
   const { orderId, itemId } = useLocalSearchParams<{ orderId: string; itemId: string }>();
   const { t, locale, formatCurrency } = useI18n();
+
+  const [deliveredReceipt, setDeliveredReceipt] = useState<{
+    item: ServiceOrderItemResponse;
+    payments: ReceiptPaymentPart[];
+  } | null>(null);
+  const [sharingPdf, setSharingPdf] = useState(false);
 
   const orderQuery = useQuery({
     queryKey: ['order', orderId],
@@ -80,36 +105,42 @@ export default function DeliverItemScreen() {
   const isBalanced = isFreeReturn || (parts.length > 0 && allPartsPositive && Math.abs(remaining) < 0.005);
 
   const deliverMutation = useMutation({
-    mutationFn: () => {
-      if (isFreeReturn) {
-        return ordersApi.deliverItem(orderId, itemId, {});
-      }
-      return ordersApi.deliverItem(orderId, itemId, {
-        payments: parts.map((p) => ({
-          paymentMethod: p.paymentMethod,
-          amount: parseCurrencyBRL(p.amountText),
-        })),
-      });
+    mutationFn: async () => {
+      const submittedPayments: ReceiptPaymentPart[] = isFreeReturn
+        ? []
+        : parts.map((p) => ({
+            paymentMethod: p.paymentMethod,
+            amount: parseCurrencyBRL(p.amountText),
+          }));
+
+      const updatedItem = isFreeReturn
+        ? await ordersApi.deliverItem(orderId, itemId, {})
+        : await ordersApi.deliverItem(orderId, itemId, {
+            payments: submittedPayments.map((p) => ({
+              paymentMethod: p.paymentMethod as OrderPaymentMethod,
+              amount: p.amount,
+            })),
+          });
+
+      return { updatedItem, submittedPayments };
     },
-    onSuccess: () => {
+    onSuccess: ({ updatedItem, submittedPayments }) => {
       void queryClient.invalidateQueries({ queryKey: ['order', orderId] });
       void queryClient.invalidateQueries({ queryKey: ['bench-queue'] });
+      void queryClient.invalidateQueries({ queryKey: ['stale-items'] });
+      void queryClient.invalidateQueries({ queryKey: ['abandonment-eligible'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       void queryClient.invalidateQueries({ queryKey: ['orders-list'] });
       void queryClient.invalidateQueries({ queryKey: ['finance-summary'] });
       void queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['finance-daily-closing'] });
+      void queryClient.invalidateQueries({ queryKey: ['orders-profitability'] });
+      void queryClient.invalidateQueries({ queryKey: ['item-payments', itemId] });
 
-      Alert.alert(
-        locale === 'pt-BR' ? 'Entrega registrada!' : 'Delivery recorded!',
-        isFreeReturn
-          ? locale === 'pt-BR'
-            ? 'Aparelho devolvido sem cobrança.'
-            : 'Appliance returned without charge.'
-          : locale === 'pt-BR'
-            ? 'Pagamento confirmado e lançado automaticamente no financeiro.'
-            : 'Payment confirmed and automatically recorded in finance.',
-        [{ text: 'OK', onPress: () => router.replace('/(tabs)/workbench') }]
-      );
+      setDeliveredReceipt({
+        item: updatedItem,
+        payments: submittedPayments,
+      });
     },
     onError: (err) => {
       Alert.alert(
@@ -118,6 +149,44 @@ export default function DeliverItemScreen() {
       );
     },
   });
+
+  const handleSendReceiptWhatsapp = async () => {
+    if (!order || !deliveredReceipt || !session?.tenant) return;
+    try {
+      await sendConsolidatedOrderReceiptWhatsapp({
+        tenant: session.tenant,
+        order,
+        locale,
+        overrideItem: deliveredReceipt.item,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Não foi possível abrir o WhatsApp' : 'Could not open WhatsApp',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    }
+  };
+
+  const handleShareReceiptPdf = async () => {
+    if (!order || !deliveredReceipt || !session?.tenant) return;
+    setSharingPdf(true);
+    try {
+      await shareConsolidatedOrderReceiptPdf({
+        tenant: session.tenant,
+        order,
+        locale,
+        overrideItem: deliveredReceipt.item,
+        overrideItemPayments: deliveredReceipt.payments,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao gerar comprovante' : 'Could not generate receipt',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    } finally {
+      setSharingPdf(false);
+    }
+  };
 
   const handleAddSplit = () => {
     const nextMethod = PAYMENT_METHODS[parts.length % PAYMENT_METHODS.length];
@@ -150,6 +219,139 @@ export default function DeliverItemScreen() {
   }
 
   const applianceTitle = [item.applianceType, item.brand, item.model].filter(Boolean).join(' ');
+
+  if (deliveredReceipt) {
+    const warranty = computeWarrantyInfo(deliveredReceipt.item);
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.topBar}>
+          <Pressable
+            onPress={() => router.replace('/(tabs)/workbench')}
+            style={styles.closeBtn}
+            hitSlop={8}
+          >
+            <X size={20} color={colors.textPrimary} />
+          </Pressable>
+          <Text style={styles.topTitle}>
+            {locale === 'pt-BR' ? 'Entrega Confirmada' : 'Delivery Confirmed'}
+          </Text>
+          <TagBadge label={`#${deliveredReceipt.item.tag}`} variant="dark" />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.successScroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.successHero}>
+            <View style={styles.successIconCircle}>
+              <CheckCircle2 size={34} color={colors.successDark} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.successTitle}>
+              {isFreeReturn
+                ? locale === 'pt-BR'
+                  ? 'Devolução registrada!'
+                  : 'Return recorded!'
+                : locale === 'pt-BR'
+                  ? 'Entrega registrada!'
+                  : 'Delivery recorded!'}
+            </Text>
+            <Text style={styles.successSubtitle}>
+              {isFreeReturn
+                ? locale === 'pt-BR'
+                  ? 'Aparelho devolvido sem cobrança. Você já pode compartilhar o comprovante de devolução com o cliente.'
+                  : 'Appliance returned without charge. You can now share the return receipt with the customer.'
+                : locale === 'pt-BR'
+                  ? 'Pagamento confirmado e lançado no financeiro. Envie o comprovante com o termo de garantia pelo WhatsApp.'
+                  : 'Payment confirmed and recorded in finance. Share the receipt and warranty certificate via WhatsApp.'}
+            </Text>
+          </View>
+
+          <Card style={styles.summaryCard}>
+            <Text style={styles.applianceTitle}>{applianceTitle}</Text>
+            <View style={styles.customerRow}>
+              <User size={14} color={colors.textMuted} />
+              <Text style={styles.customerName}>{order.customerName ?? '—'}</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.totalReceiveRow}>
+              <Text style={styles.totalReceiveLabel}>
+                {locale === 'pt-BR' ? 'TOTAL PAGO' : 'TOTAL PAID'}
+              </Text>
+              <Text style={styles.totalReceiveValue}>
+                {formatCurrency(deliveredReceipt.item.totalPrice)}
+              </Text>
+            </View>
+
+            {deliveredReceipt.payments.length > 0 ? (
+              <View style={styles.receiptPaymentsList}>
+                {deliveredReceipt.payments.map((part, idx) => (
+                  <View key={`${part.paymentMethod}-${idx}`} style={styles.receiptPaymentRow}>
+                    <Text style={styles.receiptPaymentMethod}>
+                      {t.paymentMethod[part.paymentMethod]}
+                    </Text>
+                    <Text style={styles.receiptPaymentAmount}>{formatCurrency(part.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </Card>
+
+          {warranty.hasWarranty && warranty.expiryDate ? (
+            <Card accentBorderColor={colors.brandPrimaryBorder} style={styles.warrantySummaryCard}>
+              <View style={styles.warrantySummaryHeader}>
+                <ShieldCheck size={18} color={colors.brandPrimary} />
+                <Text style={styles.warrantySummaryTitle}>
+                  {locale === 'pt-BR'
+                    ? `Garantia de ${warranty.warrantyDays} dias`
+                    : `${warranty.warrantyDays}-day Warranty`}
+                </Text>
+              </View>
+              <Text style={styles.warrantySummaryDate}>
+                {locale === 'pt-BR' ? 'Válida até ' : 'Valid until '}
+                <Text style={styles.warrantySummaryDateBold}>
+                  {formatFullDate(warranty.expiryDate, locale)}
+                </Text>
+              </Text>
+            </Card>
+          ) : null}
+        </ScrollView>
+
+        <View
+          style={[
+            styles.stickyFooter,
+            { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+          ]}
+        >
+          <Button
+            label={
+              locale === 'pt-BR'
+                ? 'Enviar Comprovante no WhatsApp'
+                : 'Send Receipt on WhatsApp'
+            }
+            icon={<MessageCircle size={18} color={colors.textOnDark} />}
+            onPress={() => void handleSendReceiptWhatsapp()}
+          />
+          <View style={styles.successSecondaryRow}>
+            <Button
+              label={locale === 'pt-BR' ? 'Arquivo PDF' : 'PDF File'}
+              variant="secondary"
+              fullWidth={false}
+              loading={sharingPdf}
+              icon={<FileText size={16} color={colors.textPrimary} />}
+              onPress={() => void handleShareReceiptPdf()}
+              style={styles.successSecondaryBtn}
+            />
+            <Button
+              label={locale === 'pt-BR' ? 'Bancada' : 'Workbench'}
+              variant="secondary"
+              fullWidth={false}
+              onPress={() => router.replace('/(tabs)/workbench')}
+              style={styles.successSecondaryBtn}
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -748,5 +950,90 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: colors.textMuted,
     textAlign: 'center',
+  },
+  successScroll: {
+    padding: spacing.lg,
+    gap: 14,
+  },
+  successHero: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  successIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  successTitle: {
+    fontFamily: fonts.headlineBold,
+    fontSize: 20,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  successSubtitle: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 13.5,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 320,
+  },
+  receiptPaymentsList: {
+    gap: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  receiptPaymentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  receiptPaymentMethod: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  receiptPaymentAmount: {
+    fontFamily: fonts.monoBold,
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
+  warrantySummaryCard: {
+    backgroundColor: colors.brandPrimarySoft,
+    gap: 6,
+  },
+  warrantySummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  warrantySummaryTitle: {
+    fontFamily: fonts.headlineSemiBold,
+    fontSize: 15,
+    color: colors.infoDark,
+  },
+  warrantySummaryDate: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 13.5,
+    color: colors.textSecondary,
+  },
+  warrantySummaryDateBold: {
+    fontFamily: fonts.monoBold,
+    color: colors.infoDark,
+  },
+  successSecondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  successSecondaryBtn: {
+    flex: 1,
   },
 });

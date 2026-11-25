@@ -7,20 +7,18 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Notifications from 'expo-notifications';
+import type { EventSubscription, NotificationResponse } from 'expo-notifications';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/auth/AuthProvider';
 import {
   configureForegroundNotificationHandler,
   isPushSupportedInRuntime,
+  loadNotificationsModule,
   registerDevicePushToken,
   resolveNotificationRoute,
   type PushRegistrationStatus,
 } from './pushNotifications';
-
-configureForegroundNotificationHandler();
 
 interface PushNotificationsContextValue {
   status: PushRegistrationStatus;
@@ -82,7 +80,7 @@ export function PushNotificationsProvider({ children }: { children: React.ReactN
   );
 
   const handleNotificationTap = useCallback(
-    (response: Notifications.NotificationResponse | null) => {
+    (response: NotificationResponse | null) => {
       if (!response || !isAuthenticated || isHydrating) return;
 
       const notificationId = response.notification.request.identifier;
@@ -139,7 +137,7 @@ export function PushNotificationsProvider({ children }: { children: React.ReactN
       return;
     }
 
-    if (registeredUserIdRef.current === currentUserId) {
+    if (!supported || registeredUserIdRef.current === currentUserId) {
       return;
     }
     registeredUserIdRef.current = currentUserId;
@@ -157,36 +155,55 @@ export function PushNotificationsProvider({ children }: { children: React.ReactN
     return () => {
       cancelled = true;
     };
-  }, [currentUserId]);
+  }, [currentUserId, supported]);
 
-  // Attach foreground and tap listeners on native platforms.
+  // Attach foreground and tap listeners on supported native builds only.
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    if (!supported) return;
 
-    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
-      const data = notification.request.content.data as Record<string, unknown> | undefined;
-      invalidateRelatedQueries(data);
-    });
+    let disposed = false;
+    let receivedSub: EventSubscription | null = null;
+    let responseSub: EventSubscription | null = null;
 
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      handleNotificationTap(response);
-    });
+    void (async () => {
+      await configureForegroundNotificationHandler();
+      const Notifications = await loadNotificationsModule();
+      if (!Notifications || disposed) return;
+
+      receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+        const data = notification.request.content.data as Record<string, unknown> | undefined;
+        invalidateRelatedQueries(data);
+      });
+
+      responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+        handleNotificationTap(response);
+      });
+    })();
 
     return () => {
-      receivedSub.remove();
-      responseSub.remove();
+      disposed = true;
+      receivedSub?.remove();
+      responseSub?.remove();
     };
-  }, [handleNotificationTap, invalidateRelatedQueries]);
+  }, [handleNotificationTap, invalidateRelatedQueries, supported]);
 
   // Handle cold-start notification launch once authentication finishes hydrating.
   useEffect(() => {
-    if (Platform.OS === 'web' || isHydrating || !isAuthenticated) return;
+    if (!supported || isHydrating || !isAuthenticated) return;
 
-    const lastResponse = Notifications.getLastNotificationResponse();
-    if (lastResponse) {
-      handleNotificationTap(lastResponse);
-    }
-  }, [handleNotificationTap, isAuthenticated, isHydrating]);
+    let disposed = false;
+    void loadNotificationsModule().then((Notifications) => {
+      if (!Notifications || disposed) return;
+      const lastResponse = Notifications.getLastNotificationResponse();
+      if (lastResponse) {
+        handleNotificationTap(lastResponse);
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [handleNotificationTap, isAuthenticated, isHydrating, supported]);
 
   const value = useMemo<PushNotificationsContextValue>(
     () => ({

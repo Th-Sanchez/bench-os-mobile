@@ -1,3 +1,4 @@
+import type React from 'react';
 import * as Sentry from '@sentry/react-native';
 import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
@@ -181,5 +182,16 @@ export function captureHandledException(
   });
 }
 
-export const wrapRootComponent = Sentry.wrap;
-export const wrapRouterErrorBoundary = Sentry.wrapExpoRouterErrorBoundary;
+export function wrapRootComponent<P extends Record<string, unknown>>(
+  RootComponent: React.ComponentType<P>
+): React.ComponentType<P> {
+  return isSentryConfigured() ? Sentry.wrap(RootComponent) : RootComponent;
+}
+
+export function wrapRouterErrorBoundary<P extends Sentry.ExpoRouterErrorBoundaryProps>(
+  OriginalErrorBoundary: React.ComponentType<P>
+): React.ComponentType<P> {
+  return isSentryConfigured()
+    ? Sentry.wrapExpoRouterErrorBoundary(OriginalErrorBoundary)
+    : OriginalErrorBoundary;
+}

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Linking,
   Pressable,
@@ -16,9 +17,11 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   ClipboardList,
+  FileText,
   MessageCircle,
   Phone,
   Plus,
+  Printer,
   Search,
   User,
   Wrench,
@@ -33,8 +36,17 @@ import {
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ItemStatus, ServiceOrderItemResponse, ServiceOrderResponse } from '@/types/api';
+import {
+  shareOrderIntakeTicketPdf,
+  shareOrderLabelsPdf,
+} from '@/utils/labelPrintPdf';
+import {
+  sendConsolidatedOrderReceiptWhatsapp,
+  shareConsolidatedOrderReceiptPdf,
+} from '@/utils/warrantyReceiptPdf';
 
 type OrderFilter = 'ALL' | 'OPEN' | 'READY' | 'COMPLETED';
 
@@ -76,10 +88,13 @@ export default function OrdersScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { locale, formatCurrency, formatPhone, formatShortDate } = useI18n();
+  const { mode: printMode, isPrintEnabled } = usePrintPreferences();
 
   const [searchText, setSearchText] = useState('');
   const [filter, setFilter] = useState<OrderFilter>('ALL');
   const [whatsappOrder, setWhatsappOrder] = useState<ServiceOrderResponse | null>(null);
+  const [sharingPdfOrderId, setSharingPdfOrderId] = useState<string | null>(null);
+  const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
 
   const trimmedSearch = searchText.trim();
   const numberMatch = trimmedSearch.match(ORDER_NUMBER_PATTERN);
@@ -168,10 +183,119 @@ export default function OrdersScreen() {
     }
   };
 
+  const handleSendOrderReceiptWhatsapp = async (order: ServiceOrderResponse) => {
+    if (!session?.tenant) return;
+    try {
+      await sendConsolidatedOrderReceiptWhatsapp({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Não foi possível abrir o WhatsApp' : 'Could not open WhatsApp',
+        err instanceof Error
+          ? err.message
+          : locale === 'pt-BR'
+            ? 'Tente novamente.'
+            : 'Please try again.'
+      );
+    }
+  };
+
+  const handleShareOrderReceipt = async (order: ServiceOrderResponse) => {
+    if (!session?.tenant) return;
+    setSharingPdfOrderId(order.id);
+    try {
+      await shareConsolidatedOrderReceiptPdf({
+        tenant: session.tenant,
+        order,
+        locale,
+      });
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao gerar comprovante' : 'Could not generate receipt',
+        err instanceof Error
+          ? err.message
+          : locale === 'pt-BR'
+            ? 'Tente novamente.'
+            : 'Please try again.'
+      );
+    } finally {
+      setSharingPdfOrderId(null);
+    }
+  };
+
+  const handlePrintOrderAction = (order: ServiceOrderResponse) => {
+    if (!session?.tenant || printMode === 'DISABLED' || printingOrderId !== null) return;
+    const tenant = session.tenant;
+    const activeMode = printMode;
+
+    const runPrint = async (kind: 'labels' | 'intake') => {
+      setPrintingOrderId(order.id);
+      try {
+        if (kind === 'labels') {
+          await shareOrderLabelsPdf({
+            tenant,
+            order,
+            items: order.items,
+            mode: activeMode,
+            locale,
+          });
+        } else {
+          await shareOrderIntakeTicketPdf({
+            tenant,
+            order,
+            mode: activeMode,
+            locale,
+          });
+        }
+      } catch (err) {
+        Alert.alert(
+          locale === 'pt-BR' ? 'Erro ao gerar impressão' : 'Could not generate print PDF',
+          err instanceof Error
+            ? err.message
+            : locale === 'pt-BR'
+              ? 'Tente novamente.'
+              : 'Please try again.'
+        );
+      } finally {
+        setPrintingOrderId(null);
+      }
+    };
+
+    const modeTag = activeMode === 'THERMAL_58MM' ? '58mm' : 'A4';
+    Alert.alert(
+      locale === 'pt-BR' ? `Imprimir OS #${order.orderNumber} (${modeTag})` : `Print Order #${order.orderNumber} (${modeTag})`,
+      undefined,
+      [
+        {
+          text:
+            locale === 'pt-BR'
+              ? `Etiquetas com QR (${order.items.length})`
+              : `QR Labels (${order.items.length})`,
+          onPress: () => {
+            void runPrint('labels');
+          },
+        },
+        {
+          text: locale === 'pt-BR' ? 'Comprovante de Entrada' : 'Intake Ticket',
+          onPress: () => {
+            void runPrint('intake');
+          },
+        },
+        { text: locale === 'pt-BR' ? 'Cancelar' : 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
   const renderOrderCard = ({ item: order }: { item: ServiceOrderResponse }) => {
     const completed = isOrderCompleted(order);
     const total = computeOrderTotal(order.items);
     const itemCount = order.items.length;
+    const deliveredCount = order.items.filter((i) => i.status === 'DELIVERED').length;
+    const isGeneratingThisPdf = sharingPdfOrderId === order.id;
+    const isPrintingThisOrder = printingOrderId === order.id;
     const itemCountLabel =
       locale === 'pt-BR'
         ? `${itemCount} ${itemCount === 1 ? 'aparelho' : 'aparelhos'}`
@@ -215,6 +339,21 @@ export default function OrdersScreen() {
                 <Text style={styles.phoneText}>{formatPhone(order.customerPhone)}</Text>
               </Pressable>
             ) : null}
+            {isPrintEnabled ? (
+              <Pressable
+                disabled={printingOrderId !== null}
+                onPress={() => handlePrintOrderAction(order)}
+                hitSlop={6}
+                style={styles.waIconBtn}
+                accessibilityLabel={locale === 'pt-BR' ? 'Imprimir etiquetas' : 'Print labels'}
+              >
+                {isPrintingThisOrder ? (
+                  <ActivityIndicator size="small" color={colors.brandPrimary} />
+                ) : (
+                  <Printer size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                )}
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={() => setWhatsappOrder(order)}
               hitSlop={6}
@@ -249,6 +388,49 @@ export default function OrdersScreen() {
             </Pressable>
           ))}
         </View>
+
+        {deliveredCount > 0 ? (
+          <View style={styles.receiptActionsRow}>
+            <Pressable
+              onPress={() => void handleSendOrderReceiptWhatsapp(order)}
+              style={({ pressed }) => [
+                styles.receiptWaBtn,
+                pressed && styles.receiptPdfBtnPressed,
+              ]}
+            >
+              <MessageCircle size={15} color={colors.successDark} strokeWidth={2.2} />
+              <Text style={styles.receiptWaBtnText} numberOfLines={1}>
+                {locale === 'pt-BR'
+                  ? deliveredCount > 1
+                    ? `Enviar Comprovante (${deliveredCount})`
+                    : 'Enviar Comprovante'
+                  : deliveredCount > 1
+                    ? `Send Receipt (${deliveredCount})`
+                    : 'Send Receipt'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              disabled={sharingPdfOrderId !== null}
+              onPress={() => void handleShareOrderReceipt(order)}
+              style={({ pressed }) => [
+                styles.receiptPdfBtn,
+                pressed && styles.receiptPdfBtnPressed,
+                sharingPdfOrderId !== null && !isGeneratingThisPdf && styles.receiptPdfBtnDisabled,
+              ]}
+              accessibilityLabel={
+                locale === 'pt-BR' ? 'Compartilhar arquivo PDF' : 'Share PDF file'
+              }
+            >
+              {isGeneratingThisPdf ? (
+                <ActivityIndicator size="small" color={colors.brandPrimary} />
+              ) : (
+                <FileText size={15} color={colors.brandPrimary} strokeWidth={2.2} />
+              )}
+              <Text style={styles.receiptPdfBtnText}>PDF</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -355,6 +537,14 @@ export default function OrdersScreen() {
               </Pressable>
             );
           })}
+          <Pressable
+            onPress={() => router.push('/orders/stale')}
+            style={[styles.filterChip, styles.staleLinkChip]}
+          >
+            <Text style={styles.staleLinkChipText}>
+              {locale === 'pt-BR' ? 'Parados / Descarte' : 'Stale / Discard'}
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
 
@@ -576,6 +766,15 @@ const styles = StyleSheet.create({
     color: colors.textOnDark,
     fontFamily: fonts.bodySemiBold,
   },
+  staleLinkChip: {
+    backgroundColor: colors.warningSoft,
+    borderColor: colors.warningBorder,
+  },
+  staleLinkChipText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.warningDark,
+  },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
@@ -734,6 +933,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textPrimary,
     flex: 1,
+  },
+  receiptActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  receiptWaBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  receiptWaBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.successDark,
+  },
+  receiptPdfBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.brandPrimarySoft,
+    borderWidth: 1,
+    borderColor: colors.brandPrimaryBorder,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  receiptPdfBtnPressed: {
+    opacity: 0.82,
+  },
+  receiptPdfBtnDisabled: {
+    opacity: 0.55,
+  },
+  receiptPdfBtnText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.infoDark,
   },
   insightCard: {
     marginTop: 14,
