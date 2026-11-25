@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -8,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -19,12 +21,18 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
+  FileSpreadsheet,
+  FileText,
   Lock,
   Minus,
   Plus,
+  Wallet,
+  X,
 } from 'lucide-react-native';
 import { financeApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
+import { DailyCashClosingModal } from '@/components/finance/DailyCashClosingModal';
 import { PayTransactionModal } from '@/components/finance/PayTransactionModal';
 import { SuppliersModal } from '@/components/finance/SuppliersModal';
 import { TransactionFormModal } from '@/components/finance/TransactionFormModal';
@@ -35,6 +43,11 @@ import type {
   FinancialTransactionResponse,
   OrderPaymentMethod,
 } from '@/types/api';
+import {
+  fetchAllMonthlyTransactions,
+  shareMonthlyFinanceCsv,
+  shareMonthlyFinancePdf,
+} from '@/utils/financeExport';
 
 const MONTH_LABELS_PT = [
   'Jan',
@@ -110,17 +123,33 @@ function formatTxTimestamp(iso: string, locale: 'pt-BR' | 'en'): string {
   return `${dd}/${mo}, ${hh}:${mm}`;
 }
 
+function toLocalIsoDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export default function FinanceDashboardScreen() {
   const { session, isOwner } = useAuth();
   const { locale, t, formatCurrency, formatShortDate } = useI18n();
+  const insets = useSafeAreaInsets();
 
   const initialDate = useMemo(() => new Date(), []);
+  const todayIso = useMemo(() => toLocalIsoDate(initialDate), [initialDate]);
+  const deviceZone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
+    []
+  );
   const [selectedYear, setSelectedYear] = useState(initialDate.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(initialDate.getMonth());
   const [showAllTransactions, setShowAllTransactions] = useState(false);
 
   const [entryModalOpen, setEntryModalOpen] = useState(false);
   const [suppliersModalOpen, setSuppliersModalOpen] = useState(false);
+  const [dailyClosingModalOpen, setDailyClosingModalOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'csv' | null>(null);
   const [payingTx, setPayingTx] = useState<FinancialTransactionResponse | null>(null);
 
   const { from, to } = useMemo(
@@ -152,6 +181,12 @@ export default function FinanceDashboardScreen() {
     enabled: isOwner,
   });
 
+  const dailyClosingQuery = useQuery({
+    queryKey: ['finance-daily-closing', todayIso, deviceZone],
+    queryFn: () => financeApi.getDailyClosing({ date: todayIso, zone: deviceZone }),
+    enabled: isOwner,
+  });
+
   const shiftMonth = (delta: number) => {
     const next = new Date(selectedYear, selectedMonth + delta, 1);
     setSelectedYear(next.getFullYear());
@@ -163,7 +198,44 @@ export default function FinanceDashboardScreen() {
       summaryQuery.refetch(),
       transactionsQuery.refetch(),
       pendingPayablesQuery.refetch(),
+      dailyClosingQuery.refetch(),
     ]);
+  };
+
+  const handleExportMonthly = async (format: 'pdf' | 'csv') => {
+    if (!session?.tenant || exportingFormat !== null) return;
+    setExportingFormat(format);
+    try {
+      const [activeSummary, allTransactions] = await Promise.all([
+        summaryQuery.data
+          ? Promise.resolve(summaryQuery.data)
+          : financeApi.getSummary({ from, to }),
+        fetchAllMonthlyTransactions(from, to),
+      ]);
+
+      const exportParams = {
+        tenant: session.tenant,
+        year: selectedYear,
+        monthIndex: selectedMonth,
+        summary: activeSummary,
+        transactions: allTransactions,
+        locale,
+      };
+
+      if (format === 'csv') {
+        await shareMonthlyFinanceCsv(exportParams);
+      } else {
+        await shareMonthlyFinancePdf(exportParams);
+      }
+      setExportMenuOpen(false);
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao exportar extrato' : 'Export failed',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    } finally {
+      setExportingFormat(null);
+    }
   };
 
   // Defense-in-depth RBAC guard (tab is already hidden for non-OWNER roles)
@@ -192,6 +264,7 @@ export default function FinanceDashboardScreen() {
   } ${selectedYear}`;
 
   const summary = summaryQuery.data;
+  const dailyClosing = dailyClosingQuery.data;
   const transactions = transactionsQuery.data?.content ?? [];
   const pendingPayables = pendingPayablesQuery.data?.content ?? [];
   const visibleTransactions = showAllTransactions ? transactions : transactions.slice(0, 6);
@@ -200,13 +273,25 @@ export default function FinanceDashboardScreen() {
   const isRefreshing =
     summaryQuery.isRefetching ||
     transactionsQuery.isRefetching ||
-    pendingPayablesQuery.isRefetching;
+    pendingPayablesQuery.isRefetching ||
+    dailyClosingQuery.isRefetching;
 
   const totalIncomePaid = summary?.totalIncomePaid ?? 0;
   const totalExpensePaid = summary?.totalExpensePaid ?? 0;
   const netBalance = summary?.netBalance ?? 0;
   const totalPendingPayables = summary?.totalPendingPayables ?? 0;
   const totalOverduePayables = summary?.totalOverduePayables ?? 0;
+
+  const todayNetCashFlow = dailyClosing?.netCashFlow ?? 0;
+  const todayPixIn = Number(dailyClosing?.incomeByPaymentMethod?.PIX ?? 0);
+  const todayCashDrawerNet =
+    Number(dailyClosing?.incomeByPaymentMethod?.CASH ?? 0) -
+    Number(dailyClosing?.expenseByPaymentMethod?.CASH ?? 0);
+  const todayCardsIn =
+    Number(dailyClosing?.incomeByPaymentMethod?.DEBIT_CARD ?? 0) +
+    Number(dailyClosing?.incomeByPaymentMethod?.CREDIT_CARD ?? 0);
+  const todayMovementsCount =
+    (dailyClosing?.incomeCount ?? 0) + (dailyClosing?.expenseCount ?? 0);
 
   const hasOverdue = totalOverduePayables > 0;
   const hasPending = totalPendingPayables > 0 || pendingPayables.length > 0;
@@ -242,6 +327,19 @@ export default function FinanceDashboardScreen() {
               <ChevronRight size={14} color={colors.textMuted} strokeWidth={2.4} />
             </Pressable>
           </View>
+
+          <Pressable
+            onPress={() => setExportMenuOpen(true)}
+            disabled={exportingFormat !== null}
+            style={({ pressed }) => [styles.iconSquareBtn, pressed && styles.iconSquareBtnPressed]}
+            accessibilityLabel={locale === 'pt-BR' ? 'Exportar extrato' : 'Export statement'}
+          >
+            {exportingFormat !== null ? (
+              <ActivityIndicator size="small" color={colors.brandPrimary} />
+            ) : (
+              <Download size={17} color={colors.textPrimary} strokeWidth={2} />
+            )}
+          </Pressable>
 
           <Pressable
             onPress={() => setSuppliersModalOpen(true)}
@@ -348,6 +446,96 @@ export default function FinanceDashboardScreen() {
               </View>
             </View>
           </View>
+
+          {/* Daily Cash Closing Card ('Caixa de Hoje') */}
+          <Pressable
+            onPress={() => setDailyClosingModalOpen(true)}
+            style={({ pressed }) => [styles.todayCard, pressed && styles.todayCardPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={locale === 'pt-BR' ? 'Abrir fechamento de caixa de hoje' : 'Open daily cash closing'}
+          >
+            <View style={styles.todayHeaderRow}>
+              <View style={styles.todayTitleGroup}>
+                <View style={styles.todayIconBox}>
+                  <Wallet size={15} color={colors.brandPrimary} strokeWidth={2.2} />
+                </View>
+                <View>
+                  <Text style={styles.todayOverline}>
+                    {locale === 'pt-BR' ? 'CAIXA DE HOJE' : "TODAY'S CASH"}
+                  </Text>
+                  <Text style={styles.todaySubmeta}>
+                    {dailyClosingQuery.isLoading && !dailyClosing
+                      ? locale === 'pt-BR'
+                        ? 'Carregando movimentações...'
+                        : 'Loading movements...'
+                      : todayMovementsCount === 0
+                        ? locale === 'pt-BR'
+                          ? 'Nenhuma movimentação paga hoje'
+                          : 'No paid movements today'
+                        : locale === 'pt-BR'
+                          ? `${todayMovementsCount} movimentaç${todayMovementsCount === 1 ? 'ão paga' : 'ões pagas'}`
+                          : `${todayMovementsCount} paid movement${todayMovementsCount === 1 ? '' : 's'}`}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.todayCtaBadge}>
+                <Text style={styles.todayCtaText}>
+                  {locale === 'pt-BR' ? 'Fechar dia' : 'Close day'}
+                </Text>
+                <ChevronRight size={13} color={colors.brandPrimary} strokeWidth={2.4} />
+              </View>
+            </View>
+
+            <View style={styles.todayBalanceRow}>
+              <Text
+                style={[
+                  styles.todayBalanceValue,
+                  todayNetCashFlow < 0 && styles.heroBalanceNegative,
+                ]}
+              >
+                {todayNetCashFlow < 0
+                  ? `- ${formatCurrency(Math.abs(todayNetCashFlow))}`
+                  : formatCurrency(todayNetCashFlow)}
+              </Text>
+              <Text style={styles.todayBalanceCaption}>
+                {locale === 'pt-BR' ? 'Saldo líquido do dia' : 'Net cash today'}
+              </Text>
+            </View>
+
+            <View style={styles.todayBreakdownRow}>
+              <View style={styles.todayMiniPill}>
+                <Text style={styles.todayMiniLabel}>PIX</Text>
+                <Text style={styles.todayMiniValue} numberOfLines={1}>
+                  {formatCurrency(todayPixIn)}
+                </Text>
+              </View>
+              <View style={styles.todayMiniPill}>
+                <Text style={styles.todayMiniLabel}>
+                  {locale === 'pt-BR' ? 'Gaveta' : 'Cash'}
+                </Text>
+                <Text
+                  style={[
+                    styles.todayMiniValue,
+                    todayCashDrawerNet < 0 && styles.heroBalanceNegative,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {todayCashDrawerNet < 0
+                    ? `-${formatCurrency(Math.abs(todayCashDrawerNet))}`
+                    : formatCurrency(todayCashDrawerNet)}
+                </Text>
+              </View>
+              <View style={styles.todayMiniPill}>
+                <Text style={styles.todayMiniLabel}>
+                  {locale === 'pt-BR' ? 'Cartões' : 'Cards'}
+                </Text>
+                <Text style={styles.todayMiniValue} numberOfLines={1}>
+                  {formatCurrency(todayCardsIn)}
+                </Text>
+              </View>
+            </View>
+          </Pressable>
 
           {/* Supplier Store Credit Alert Card ('Contas a Pagar / Fiado') */}
           {hasPending ? (
@@ -673,6 +861,141 @@ export default function FinanceDashboardScreen() {
         visible={suppliersModalOpen}
         onClose={() => setSuppliersModalOpen(false)}
       />
+
+      <DailyCashClosingModal
+        visible={dailyClosingModalOpen}
+        onClose={() => setDailyClosingModalOpen(false)}
+      />
+
+      {/* Export & Reports Bottom Sheet */}
+      <Modal
+        visible={exportMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (exportingFormat === null) setExportMenuOpen(false);
+        }}
+      >
+        <Pressable
+          style={styles.exportBackdrop}
+          onPress={() => {
+            if (exportingFormat === null) setExportMenuOpen(false);
+          }}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={[
+              styles.exportSheet,
+              { paddingBottom: Math.max(insets.bottom + spacing.md, spacing.xxl) },
+            ]}
+          >
+            <View style={styles.exportHeader}>
+              <View>
+                <Text style={styles.exportTitle}>
+                  {locale === 'pt-BR' ? 'Relatórios & Exportação' : 'Reports & Export'}
+                </Text>
+                <Text style={styles.exportSubtitle}>
+                  {locale === 'pt-BR'
+                    ? `Período selecionado: ${monthLabel}`
+                    : `Selected period: ${monthLabel}`}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (exportingFormat === null) setExportMenuOpen(false);
+                }}
+                hitSlop={10}
+              >
+                <X size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <Pressable
+              disabled={exportingFormat !== null}
+              onPress={() => {
+                void handleExportMonthly('pdf');
+              }}
+              style={({ pressed }) => [
+                styles.exportOption,
+                pressed && styles.exportOptionPressed,
+              ]}
+            >
+              <View style={[styles.exportIconCircle, styles.exportIconPdf]}>
+                {exportingFormat === 'pdf' ? (
+                  <ActivityIndicator size="small" color={colors.danger} />
+                ) : (
+                  <FileText size={18} color={colors.danger} strokeWidth={2.1} />
+                )}
+              </View>
+              <View style={styles.exportOptionCopy}>
+                <Text style={styles.exportOptionTitle}>
+                  {locale === 'pt-BR' ? 'Extrato Mensal (PDF)' : 'Monthly Statement (PDF)'}
+                </Text>
+                <Text style={styles.exportOptionDesc}>
+                  {locale === 'pt-BR'
+                    ? 'Documento A4 pronto para imprimir, WhatsApp ou enviar ao contador'
+                    : 'A4 statement ready for printing, WhatsApp or your accountant'}
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              disabled={exportingFormat !== null}
+              onPress={() => {
+                void handleExportMonthly('csv');
+              }}
+              style={({ pressed }) => [
+                styles.exportOption,
+                pressed && styles.exportOptionPressed,
+              ]}
+            >
+              <View style={[styles.exportIconCircle, styles.exportIconCsv]}>
+                {exportingFormat === 'csv' ? (
+                  <ActivityIndicator size="small" color={colors.successDark} />
+                ) : (
+                  <FileSpreadsheet size={18} color={colors.successDark} strokeWidth={2.1} />
+                )}
+              </View>
+              <View style={styles.exportOptionCopy}>
+                <Text style={styles.exportOptionTitle}>
+                  {locale === 'pt-BR' ? 'Planilha Mensal (CSV)' : 'Monthly Spreadsheet (CSV)'}
+                </Text>
+                <Text style={styles.exportOptionDesc}>
+                  {locale === 'pt-BR'
+                    ? 'Compatível com Excel (UTF-8 / ponto e vírgula) para controle MEI'
+                    : 'Excel-compatible CSV spreadsheet with all month transactions'}
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              disabled={exportingFormat !== null}
+              onPress={() => {
+                setExportMenuOpen(false);
+                setDailyClosingModalOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.exportOption,
+                pressed && styles.exportOptionPressed,
+              ]}
+            >
+              <View style={[styles.exportIconCircle, styles.exportIconDaily]}>
+                <Wallet size={18} color={colors.brandPrimary} strokeWidth={2.1} />
+              </View>
+              <View style={styles.exportOptionCopy}>
+                <Text style={styles.exportOptionTitle}>
+                  {locale === 'pt-BR' ? 'Fechamento de Caixa do Dia' : 'Daily Cash Closing'}
+                </Text>
+                <Text style={styles.exportOptionDesc}>
+                  {locale === 'pt-BR'
+                    ? 'Conferir entradas/saídas por PIX, gaveta em dinheiro e cartões'
+                    : 'Reconcile daily inflows/outflows by PIX, cash drawer and cards'}
+                </Text>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1244,6 +1567,179 @@ const styles = StyleSheet.create({
   },
   retryWrap: {
     marginTop: 6,
+  },
+  todayCard: {
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.lg,
+    padding: 14,
+    gap: 10,
+  },
+  todayCardPressed: {
+    backgroundColor: colors.bgCanvas,
+  },
+  todayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  todayTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  todayIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayOverline: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: colors.textPrimary,
+  },
+  todaySubmeta: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  todayCtaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.brandPrimarySoft,
+    borderRadius: radius.md,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  todayCtaText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: colors.brandPrimary,
+  },
+  todayBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  todayBalanceValue: {
+    fontFamily: fonts.monoBold,
+    fontSize: 21,
+    letterSpacing: -0.4,
+    color: colors.textPrimary,
+  },
+  todayBalanceCaption: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  todayBreakdownRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  todayMiniPill: {
+    flex: 1,
+    backgroundColor: colors.bgCanvas,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    gap: 2,
+  },
+  todayMiniLabel: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 10,
+    color: colors.textMuted,
+  },
+  todayMiniValue: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    color: colors.textPrimary,
+  },
+  exportBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  exportSheet: {
+    backgroundColor: colors.bgSurface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    gap: 10,
+  },
+  exportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  exportTitle: {
+    fontFamily: fonts.headlineBold,
+    fontSize: 17,
+    color: colors.textPrimary,
+  },
+  exportSubtitle: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  exportOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.bgCanvas,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.lg,
+    padding: 12,
+  },
+  exportOptionPressed: {
+    backgroundColor: colors.bgSubtle,
+  },
+  exportIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportIconPdf: {
+    backgroundColor: colors.dangerSoft,
+  },
+  exportIconCsv: {
+    backgroundColor: colors.successSoft,
+  },
+  exportIconDaily: {
+    backgroundColor: colors.brandPrimarySoft,
+  },
+  exportOptionCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  exportOptionTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  exportOptionDesc: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
   fab: {
     position: 'absolute',

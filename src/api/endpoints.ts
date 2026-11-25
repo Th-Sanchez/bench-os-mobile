@@ -8,6 +8,7 @@ import type {
   CreateUserRequest,
   CreateWarrantyReturnRequest,
   CustomerResponse,
+  DailyCashClosingResponse,
   DeliverItemRequest,
   FinancialSummaryResponse,
   FinancialTransactionResponse,
@@ -221,6 +222,9 @@ export const publicOrderApi = {
 export const financeApi = {
   getSummary: (params?: { from?: string; to?: string }) =>
     apiRequest<FinancialSummaryResponse>('/api/v1/finance/summary', { query: params }),
+
+  getDailyClosing: (params?: { date?: string; zone?: string }) =>
+    apiRequest<DailyCashClosingResponse>('/api/v1/finance/daily-closing', { query: params }),
 
   listTransactions: (params?: {
     type?: TransactionType;

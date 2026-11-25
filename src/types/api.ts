@@ -431,6 +431,19 @@ export interface FinancialSummaryResponse {
   expenseByCategory: Partial<Record<TransactionCategory, number>>;
 }
 
+export interface DailyCashClosingResponse {
+  date: string;
+  zone: string;
+  totalIncomePaid: number;
+  totalExpensePaid: number;
+  netCashFlow: number;
+  incomeCount: number;
+  expenseCount: number;
+  incomeByPaymentMethod: Partial<Record<TransactionPaymentMethod, number>>;
+  expenseByPaymentMethod: Partial<Record<TransactionPaymentMethod, number>>;
+  transactions: FinancialTransactionResponse[];
+}
+
 export interface ItemPaymentSummaryResponse {
   paymentMethod: TransactionPaymentMethod;
   amount: number;

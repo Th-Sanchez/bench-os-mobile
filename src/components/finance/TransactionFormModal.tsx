@@ -143,6 +143,7 @@ function TransactionFormBody({ onClose }: { onClose: () => void }) {
         queryClient.invalidateQueries({ queryKey: ['finance-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['finance-transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['finance-pending'] }),
+        queryClient.invalidateQueries({ queryKey: ['finance-daily-closing'] }),
       ]);
       onClose();
     },
