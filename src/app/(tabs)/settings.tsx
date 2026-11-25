@@ -22,6 +22,8 @@ import {
   KeyRound,
   LogOut,
   Plus,
+  Printer,
+  QrCode,
   Settings,
   X,
 } from 'lucide-react-native';
@@ -33,6 +35,10 @@ import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
 import { usePushNotifications } from '@/notifications/PushNotificationsContext';
 import { getAppVersionLabel, isSentryConfigured } from '@/observability/sentry';
+import {
+  usePrintPreferences,
+  type PrintLabelMode,
+} from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type {
   Role,
@@ -40,6 +46,7 @@ import type {
   UserResponse,
   WhatsappMessageStage,
 } from '@/types/api';
+import { shareSampleLabelPdf } from '@/utils/labelPrintPdf';
 import {
   formatCurrencyInput,
   maskCurrencyBRL,
@@ -110,6 +117,14 @@ export default function SettingsScreen() {
     isBusy: isPushBusy,
     enableNotifications,
   } = usePushNotifications();
+  const {
+    mode: printMode,
+    scannerEnabled,
+    isPrintEnabled,
+    setMode: setPrintMode,
+    setScannerEnabled,
+  } = usePrintPreferences();
+  const [testingSampleLabel, setTestingSampleLabel] = useState(false);
 
   const [laborCostDraft, setLaborCostDraft] = useState<string | null>(null);
   const [estimatedDaysDraft, setEstimatedDaysDraft] = useState<string | null>(null);
@@ -804,6 +819,137 @@ export default function SettingsScreen() {
           </View>
         ) : null}
 
+        {/* Section 2.5: Etiquetas & Impressão (Per-device configurable) */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.printHeaderTitleRow}>
+              <Printer size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+              <Text style={styles.cardOverline}>
+                {locale === 'pt-BR' ? 'ETIQUETAS & IMPRESSÃO' : 'LABELS & PRINTING'}
+              </Text>
+            </View>
+            <Text style={styles.printModeBadge}>
+              {printMode === 'DISABLED'
+                ? locale === 'pt-BR'
+                  ? 'Desativado'
+                  : 'Off'
+                : printMode === 'A4'
+                  ? 'A4'
+                  : '58mm'}
+            </Text>
+          </View>
+
+          <Text style={styles.langSubtitle}>
+            {locale === 'pt-BR'
+              ? 'Escolha se esta oficina usa etiquetas físicas com QR Code. Quando desativado, os botões de impressão ficam ocultos.'
+              : 'Choose whether this workshop prints QR labels. When off, print buttons stay hidden.'}
+          </Text>
+
+          <View style={styles.printModesRow}>
+            {(
+              [
+                {
+                  key: 'DISABLED',
+                  label: locale === 'pt-BR' ? 'Desativado' : 'Off',
+                },
+                {
+                  key: 'A4',
+                  label: locale === 'pt-BR' ? 'Papel A4' : 'A4 Paper',
+                },
+                {
+                  key: 'THERMAL_58MM',
+                  label: locale === 'pt-BR' ? 'Térmica 58mm' : '58mm Thermal',
+                },
+              ] as { key: PrintLabelMode; label: string }[]
+            ).map((opt) => {
+              const active = printMode === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setPrintMode(opt.key)}
+                  style={[styles.printModeBtn, active && styles.printModeBtnActive]}
+                >
+                  <Text style={[styles.printModeBtnText, active && styles.printModeBtnTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.printModeHint}>
+            {printMode === 'DISABLED'
+              ? locale === 'pt-BR'
+                ? 'Ideal para oficinas que controlam as etiquetas à mão ou só usam WhatsApp.'
+                : 'Best for workshops that label items manually or only use WhatsApp.'
+              : printMode === 'A4'
+                ? locale === 'pt-BR'
+                  ? 'Gera folha A4 recortável em PDF para impressoras comuns (jato de tinta ou laser).'
+                  : 'Generates cut-out A4 PDF label sheets for standard printers.'
+                : locale === 'pt-BR'
+                  ? 'Layout 58mm preto e branco de alto contraste. Compatível com impressoras térmicas Bluetooth/Wi-Fi via Impressão do Android ou app RawBT.'
+                  : 'High-contrast 58mm B&W layout compatible with Bluetooth/Wi-Fi thermal printers via Android Print or RawBT.'}
+          </Text>
+
+          <View style={styles.logoutDivider} />
+
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <View style={styles.printHeaderTitleRow}>
+                <QrCode size={14} color={colors.textPrimary} strokeWidth={2.1} />
+                <Text style={styles.langTitle}>
+                  {locale === 'pt-BR' ? 'Leitor de QR Code na Bancada' : 'Workbench QR Scanner'}
+                </Text>
+              </View>
+              <Text style={styles.langSubtitle}>
+                {locale === 'pt-BR'
+                  ? 'Exibe atalho de câmera no topo da Bancada para abrir a OS pela etiqueta'
+                  : 'Shows a camera shortcut on the Workbench header to open items from labels'}
+              </Text>
+            </View>
+            <Switch
+              value={scannerEnabled}
+              onValueChange={setScannerEnabled}
+              trackColor={{
+                false: colors.borderStrong,
+                true: colors.brandPrimary,
+              }}
+              thumbColor={colors.bgSurface}
+            />
+          </View>
+
+          {isPrintEnabled && session?.tenant ? (
+            <Button
+              label={
+                locale === 'pt-BR'
+                  ? `Testar etiqueta de exemplo (${printMode === 'THERMAL_58MM' ? '58mm' : 'A4'})`
+                  : `Test sample label (${printMode === 'THERMAL_58MM' ? '58mm' : 'A4'})`
+              }
+              variant="secondary"
+              loading={testingSampleLabel}
+              icon={<Printer size={15} color={colors.textPrimary} />}
+              onPress={() => {
+                if (printMode === 'DISABLED' || !session?.tenant) return;
+                setTestingSampleLabel(true);
+                void shareSampleLabelPdf({
+                  tenant: session.tenant,
+                  mode: printMode,
+                  locale,
+                })
+                  .catch((err) => {
+                    Alert.alert(
+                      locale === 'pt-BR' ? 'Erro ao gerar etiqueta' : 'Could not generate label',
+                      err instanceof Error ? err.message : t.common.errorGeneric
+                    );
+                  })
+                  .finally(() => {
+                    setTestingSampleLabel(false);
+                  });
+              }}
+            />
+          ) : null}
+        </View>
+
         {/* Section 3: App Preferences & Logout */}
         <View style={styles.card}>
           <View style={styles.langRow}>
@@ -1447,6 +1593,55 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 12,
     color: colors.brandPrimary,
+  },
+  printHeaderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  printModeBadge: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    color: colors.brandPrimary,
+    backgroundColor: colors.brandPrimarySoft,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  printModesRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  printModeBtn: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.bgCanvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  printModeBtnActive: {
+    backgroundColor: colors.brandPrimarySoft,
+    borderColor: colors.brandPrimary,
+  },
+  printModeBtnText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  printModeBtnTextActive: {
+    fontFamily: fonts.bodySemiBold,
+    color: colors.brandPrimary,
+  },
+  printModeHint: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
   appVersionFooter: {
     fontFamily: fonts.monoMedium,

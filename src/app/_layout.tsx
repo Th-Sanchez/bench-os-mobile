@@ -24,6 +24,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { AppErrorFallback } from '@/components/ui/AppErrorFallback';
 import { I18nProvider } from '@/i18n/I18nProvider';
 import { PushNotificationsProvider } from '@/notifications/PushNotificationsContext';
+import { PrintPreferencesProvider } from '@/settings/PrintPreferencesContext';
 import {
   captureHandledException,
   initSentry,
@@ -123,12 +124,14 @@ function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <I18nProvider>
-          <AuthProvider>
-            <PushNotificationsProvider>
-              <StatusBar style="dark" />
-              <RootNavigator />
-            </PushNotificationsProvider>
-          </AuthProvider>
+          <PrintPreferencesProvider>
+            <AuthProvider>
+              <PushNotificationsProvider>
+                <StatusBar style="dark" />
+                <RootNavigator />
+              </PushNotificationsProvider>
+            </AuthProvider>
+          </PrintPreferencesProvider>
         </I18nProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

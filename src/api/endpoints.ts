@@ -147,6 +147,9 @@ export const ordersApi = {
 
   get: (id: string) => apiRequest<ServiceOrderResponse>(`/api/v1/orders/${id}`),
 
+  getByToken: (publicToken: string) =>
+    apiRequest<ServiceOrderResponse>(`/api/v1/orders/by-token/${publicToken}`),
+
   listBenchQueue: (params?: {
     status?: ItemStatus[];
     tag?: string;

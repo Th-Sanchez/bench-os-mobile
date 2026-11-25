@@ -13,14 +13,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Archive, Bell, ChevronRight, Plus, Search, User, Wrench, X } from 'lucide-react-native';
+import { Archive, Bell, ChevronRight, Plus, QrCode, Search, User, Wrench, X } from 'lucide-react-native';
 import { ordersApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
+import { QrScannerModal } from '@/components/workbench/QrScannerModal';
 import { getWaitingDays } from '@/utils/staleItems';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TagBadge } from '@/components/ui/TagBadge';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, itemStatusStyles, radius, spacing } from '@/theme/tokens';
 import type { ItemStatus, OrderItemQueueResponse } from '@/types/api';
 
@@ -71,9 +73,11 @@ export default function WorkbenchScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { t, locale, formatCurrency, formatShortDate } = useI18n();
+  const { scannerEnabled } = usePrintPreferences();
 
   const [selectedFilter, setSelectedFilter] = useState<FilterKey>('ALL');
   const [searchText, setSearchText] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const trimmedSearch = searchText.trim();
   const tagMatch = trimmedSearch.match(TAG_QUERY_PATTERN);
@@ -218,6 +222,15 @@ export default function WorkbenchScreen() {
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>{t.tabs.workbench}</Text>
         <View style={styles.topBarActions}>
+          {scannerEnabled ? (
+            <Pressable
+              onPress={() => setScannerOpen(true)}
+              style={styles.iconBtn}
+              accessibilityLabel={locale === 'pt-BR' ? 'Ler QR Code' : 'Scan QR Code'}
+            >
+              <QrCode size={20} color={colors.brandPrimary} strokeWidth={2.1} />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => router.push('/orders/stale')}
             style={styles.iconBtn}
@@ -436,6 +449,17 @@ export default function WorkbenchScreen() {
         <Plus size={18} color={colors.textOnDark} strokeWidth={2.5} />
         <Text style={styles.fabLabel}>{locale === 'pt-BR' ? 'Nova OS' : 'New Order'}</Text>
       </Pressable>
+
+      <QrScannerModal
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onOpenItem={(orderId, itemId) =>
+          router.push({
+            pathname: '/orders/[orderId]/items/[itemId]',
+            params: { orderId, itemId },
+          })
+        }
+      />
     </SafeAreaView>
   );
 }

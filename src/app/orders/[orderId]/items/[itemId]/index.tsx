@@ -29,6 +29,7 @@ import {
   MessageCircle,
   MoreVertical,
   Pencil,
+  Printer,
   RotateCcw,
   ShieldCheck,
   Trash2,
@@ -49,9 +50,14 @@ import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TagBadge } from '@/components/ui/TagBadge';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ItemPhotoResponse, ItemStatus, PhotoStage } from '@/types/api';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
+import {
+  shareOrderIntakeTicketPdf,
+  shareOrderLabelsPdf,
+} from '@/utils/labelPrintPdf';
 import {
   computeWarrantyInfo,
   formatDateTime,
@@ -95,6 +101,7 @@ export default function ApplianceDetailScreen() {
   const { session } = useAuth();
   const { orderId, itemId } = useLocalSearchParams<{ orderId: string; itemId: string }>();
   const { t, locale, formatCurrency, formatPhone, formatShortDate } = useI18n();
+  const { mode: printMode, isPrintEnabled } = usePrintPreferences();
 
   const canDoTechnicalWork =
     session?.user.role === 'OWNER' || session?.user.role === 'TECHNICIAN';
@@ -105,6 +112,7 @@ export default function ApplianceDetailScreen() {
   const [warrantyReturnModalOpen, setWarrantyReturnModalOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [sharingPdf, setSharingPdf] = useState(false);
+  const [printingLabel, setPrintingLabel] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [previewPhoto, setPreviewPhoto] = useState<ItemPhotoResponse | null>(null);
@@ -260,6 +268,75 @@ export default function ApplianceDetailScreen() {
     }
   };
 
+  const handlePrintMenu = () => {
+    if (!order || !item || !session?.tenant || printMode === 'DISABLED' || printingLabel) return;
+    const tenant = session.tenant;
+    const activeMode = printMode;
+
+    const runPrint = async (kind: 'single' | 'all' | 'intake') => {
+      setPrintingLabel(true);
+      try {
+        if (kind === 'intake') {
+          await shareOrderIntakeTicketPdf({ tenant, order, mode: activeMode, locale });
+        } else {
+          await shareOrderLabelsPdf({
+            tenant,
+            order,
+            items: kind === 'single' ? [item] : order.items,
+            mode: activeMode,
+            locale,
+          });
+        }
+      } catch (err) {
+        Alert.alert(
+          locale === 'pt-BR' ? 'Erro ao gerar etiqueta' : 'Could not generate label',
+          err instanceof Error ? err.message : t.common.errorGeneric
+        );
+      } finally {
+        setPrintingLabel(false);
+      }
+    };
+
+    const modeTag = activeMode === 'THERMAL_58MM' ? '58mm' : 'A4';
+    const buttons: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[] = [
+      {
+        text:
+          locale === 'pt-BR'
+            ? `Etiqueta deste aparelho (#${item.tag})`
+            : `This appliance label (#${item.tag})`,
+        onPress: () => {
+          void runPrint('single');
+        },
+      },
+    ];
+
+    if (order.items.length > 1) {
+      buttons.push({
+        text:
+          locale === 'pt-BR'
+            ? `Todas as etiquetas da OS (${order.items.length})`
+            : `All labels in Order (${order.items.length})`,
+        onPress: () => {
+          void runPrint('all');
+        },
+      });
+    }
+
+    buttons.push({
+      text: locale === 'pt-BR' ? 'Comprovante de Entrada' : 'Intake Ticket',
+      onPress: () => {
+        void runPrint('intake');
+      },
+    });
+    buttons.push({ text: t.common.cancel, style: 'cancel' });
+
+    Alert.alert(
+      locale === 'pt-BR' ? `Imprimir (${modeTag})` : `Print (${modeTag})`,
+      undefined,
+      buttons
+    );
+  };
+
   const handleOverflowMenu = () => {
     if (!order || !item) return;
     const isTerminal =
@@ -274,6 +351,16 @@ export default function ApplianceDetailScreen() {
         onPress: () => openPublicTrackingWeb(order.publicToken),
       },
     ];
+
+    if (isPrintEnabled) {
+      options.push({
+        text:
+          locale === 'pt-BR'
+            ? `Imprimir etiqueta / comprovante (${printMode === 'THERMAL_58MM' ? '58mm' : 'A4'})`
+            : `Print label / ticket (${printMode === 'THERMAL_58MM' ? '58mm' : 'A4'})`,
+        onPress: () => handlePrintMenu(),
+      });
+    }
 
     if (item.status === 'READY_FOR_PICKUP' || item.status === 'REJECTED') {
       options.push({
@@ -511,9 +598,26 @@ export default function ApplianceDetailScreen() {
           <TagBadge label={`#${item.tag}`} variant="dark" />
           <TagBadge label={t.voltage[item.voltage]} variant="subtle" />
         </View>
-        <Pressable onPress={handleOverflowMenu} style={styles.navIconBtn} hitSlop={8}>
-          <MoreVertical size={20} color={colors.textPrimary} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          {isPrintEnabled ? (
+            <Pressable
+              disabled={printingLabel}
+              onPress={handlePrintMenu}
+              style={styles.navIconBtn}
+              hitSlop={8}
+              accessibilityLabel={locale === 'pt-BR' ? 'Imprimir etiqueta' : 'Print label'}
+            >
+              {printingLabel ? (
+                <ActivityIndicator size="small" color={colors.brandPrimary} />
+              ) : (
+                <Printer size={19} color={colors.brandPrimary} />
+              )}
+            </Pressable>
+          ) : null}
+          <Pressable onPress={handleOverflowMenu} style={styles.navIconBtn} hitSlop={8}>
+            <MoreVertical size={20} color={colors.textPrimary} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView

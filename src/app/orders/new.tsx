@@ -29,15 +29,18 @@ import {
 } from 'lucide-react-native';
 import { customersApi, ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
+import { useAuth } from '@/auth/AuthProvider';
 import { CustomerFormModal } from '@/components/customers/CustomerFormModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TagBadge } from '@/components/ui/TagBadge';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CustomerResponse, Voltage } from '@/types/api';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
+import { shareOrderLabelsPdf } from '@/utils/labelPrintPdf';
 
 const DEFAULT_APPLIANCE_TYPES = [
   'Micro-ondas',
@@ -95,7 +98,9 @@ export default function NewOrderScreen() {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const isKeyboardVisible = useKeyboardVisible();
+  const { session } = useAuth();
   const { t, locale, formatPhone } = useI18n();
+  const { mode: printMode, isPrintEnabled } = usePrintPreferences();
   const params = useLocalSearchParams<{
     customerId?: string;
     customerName?: string;
@@ -224,6 +229,54 @@ export default function NewOrderScreen() {
             ? `\n\nAtenção: ${failedPhotos} foto(s) não puderam ser enviadas (verifique o MinIO/R2). Você pode adicioná-las no detalhe do aparelho.`
             : `\n\nNote: ${failedPhotos} photo(s) failed to upload. You can retry inside the appliance detail screen.`
           : '';
+      const alertActions: {
+        text: string;
+        style?: 'cancel' | 'destructive' | 'default';
+        onPress?: () => void;
+      }[] = [
+        {
+          text: locale === 'pt-BR' ? 'Ir para Bancada' : 'Go to Bench',
+          style: 'cancel',
+          onPress: () => {
+            router.replace('/(tabs)/workbench');
+          },
+        },
+      ];
+
+      if (isPrintEnabled && printMode !== 'DISABLED' && session?.tenant) {
+        const tenant = session.tenant;
+        const activeMode = printMode;
+        alertActions.push({
+          text: locale === 'pt-BR' ? 'Imprimir Etiquetas' : 'Print Labels',
+          onPress: () => {
+            void shareOrderLabelsPdf({
+              tenant,
+              order: createdOrder,
+              items: createdOrder.items,
+              mode: activeMode,
+              locale,
+            })
+              .catch(() => {})
+              .finally(() => {
+                router.replace('/(tabs)/workbench');
+              });
+          },
+        });
+      }
+
+      alertActions.push({
+        text: locale === 'pt-BR' ? 'Enviar WhatsApp' : 'Send WhatsApp',
+        onPress: () => {
+          void ordersApi
+            .getOrderWhatsappLink(createdOrder.id, 'INTAKE')
+            .then((res) => Linking.openURL(res.whatsappUrl))
+            .catch(() => {})
+            .finally(() => {
+              router.replace('/(tabs)/workbench');
+            });
+        },
+      });
+
       Alert.alert(
         locale === 'pt-BR'
           ? `OS #${createdOrder.orderNumber} aberta!`
@@ -231,27 +284,7 @@ export default function NewOrderScreen() {
         locale === 'pt-BR'
           ? `Etiquetas físicas geradas: ${tagsList}${photoWarning}\n\nDeseja enviar o comprovante com todos os aparelhos no WhatsApp?`
           : `Generated bench tags: ${tagsList}${photoWarning}\n\nSend the intake receipt via WhatsApp?`,
-        [
-          {
-            text: locale === 'pt-BR' ? 'Ir para Bancada' : 'Go to Bench',
-            style: 'cancel',
-            onPress: () => {
-              router.replace('/(tabs)/workbench');
-            },
-          },
-          {
-            text: locale === 'pt-BR' ? 'Enviar WhatsApp' : 'Send WhatsApp',
-            onPress: () => {
-              void ordersApi
-                .getOrderWhatsappLink(createdOrder.id, 'INTAKE')
-                .then((res) => Linking.openURL(res.whatsappUrl))
-                .catch(() => {})
-                .finally(() => {
-                  router.replace('/(tabs)/workbench');
-                });
-            },
-          },
-        ]
+        alertActions
       );
     },
     onError: (err) => {

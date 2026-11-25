@@ -21,6 +21,7 @@ import {
   MessageCircle,
   Phone,
   Plus,
+  Printer,
   Search,
   User,
   Wrench,
@@ -35,8 +36,13 @@ import {
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useI18n } from '@/i18n/I18nProvider';
+import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { ItemStatus, ServiceOrderItemResponse, ServiceOrderResponse } from '@/types/api';
+import {
+  shareOrderIntakeTicketPdf,
+  shareOrderLabelsPdf,
+} from '@/utils/labelPrintPdf';
 import {
   sendConsolidatedOrderReceiptWhatsapp,
   shareConsolidatedOrderReceiptPdf,
@@ -82,11 +88,13 @@ export default function OrdersScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { locale, formatCurrency, formatPhone, formatShortDate } = useI18n();
+  const { mode: printMode, isPrintEnabled } = usePrintPreferences();
 
   const [searchText, setSearchText] = useState('');
   const [filter, setFilter] = useState<OrderFilter>('ALL');
   const [whatsappOrder, setWhatsappOrder] = useState<ServiceOrderResponse | null>(null);
   const [sharingPdfOrderId, setSharingPdfOrderId] = useState<string | null>(null);
+  const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
 
   const trimmedSearch = searchText.trim();
   const numberMatch = trimmedSearch.match(ORDER_NUMBER_PATTERN);
@@ -218,12 +226,76 @@ export default function OrdersScreen() {
     }
   };
 
+  const handlePrintOrderAction = (order: ServiceOrderResponse) => {
+    if (!session?.tenant || printMode === 'DISABLED' || printingOrderId !== null) return;
+    const tenant = session.tenant;
+    const activeMode = printMode;
+
+    const runPrint = async (kind: 'labels' | 'intake') => {
+      setPrintingOrderId(order.id);
+      try {
+        if (kind === 'labels') {
+          await shareOrderLabelsPdf({
+            tenant,
+            order,
+            items: order.items,
+            mode: activeMode,
+            locale,
+          });
+        } else {
+          await shareOrderIntakeTicketPdf({
+            tenant,
+            order,
+            mode: activeMode,
+            locale,
+          });
+        }
+      } catch (err) {
+        Alert.alert(
+          locale === 'pt-BR' ? 'Erro ao gerar impressão' : 'Could not generate print PDF',
+          err instanceof Error
+            ? err.message
+            : locale === 'pt-BR'
+              ? 'Tente novamente.'
+              : 'Please try again.'
+        );
+      } finally {
+        setPrintingOrderId(null);
+      }
+    };
+
+    const modeTag = activeMode === 'THERMAL_58MM' ? '58mm' : 'A4';
+    Alert.alert(
+      locale === 'pt-BR' ? `Imprimir OS #${order.orderNumber} (${modeTag})` : `Print Order #${order.orderNumber} (${modeTag})`,
+      undefined,
+      [
+        {
+          text:
+            locale === 'pt-BR'
+              ? `Etiquetas com QR (${order.items.length})`
+              : `QR Labels (${order.items.length})`,
+          onPress: () => {
+            void runPrint('labels');
+          },
+        },
+        {
+          text: locale === 'pt-BR' ? 'Comprovante de Entrada' : 'Intake Ticket',
+          onPress: () => {
+            void runPrint('intake');
+          },
+        },
+        { text: locale === 'pt-BR' ? 'Cancelar' : 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
   const renderOrderCard = ({ item: order }: { item: ServiceOrderResponse }) => {
     const completed = isOrderCompleted(order);
     const total = computeOrderTotal(order.items);
     const itemCount = order.items.length;
     const deliveredCount = order.items.filter((i) => i.status === 'DELIVERED').length;
     const isGeneratingThisPdf = sharingPdfOrderId === order.id;
+    const isPrintingThisOrder = printingOrderId === order.id;
     const itemCountLabel =
       locale === 'pt-BR'
         ? `${itemCount} ${itemCount === 1 ? 'aparelho' : 'aparelhos'}`
@@ -265,6 +337,21 @@ export default function OrdersScreen() {
               >
                 <Phone size={11} color={colors.textMuted} strokeWidth={2} />
                 <Text style={styles.phoneText}>{formatPhone(order.customerPhone)}</Text>
+              </Pressable>
+            ) : null}
+            {isPrintEnabled ? (
+              <Pressable
+                disabled={printingOrderId !== null}
+                onPress={() => handlePrintOrderAction(order)}
+                hitSlop={6}
+                style={styles.waIconBtn}
+                accessibilityLabel={locale === 'pt-BR' ? 'Imprimir etiquetas' : 'Print labels'}
+              >
+                {isPrintingThisOrder ? (
+                  <ActivityIndicator size="small" color={colors.brandPrimary} />
+                ) : (
+                  <Printer size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                )}
               </Pressable>
             ) : null}
             <Pressable
