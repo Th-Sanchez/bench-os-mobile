@@ -25,6 +25,7 @@ import {
   ImagePlus,
   Info,
   KeyRound,
+  Lightbulb,
   LogOut,
   Package,
   PenTool,
@@ -178,6 +179,8 @@ export default function SettingsScreen() {
   const [newApplianceType, setNewApplianceType] = useState('');
   const [selectedChecklistCategory, setSelectedChecklistCategory] = useState('Micro-ondas');
   const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [selectedCareCategory, setSelectedCareCategory] = useState('Micro-ondas');
+  const [newCareTip, setNewCareTip] = useState('');
   const [saveFeedback, setSaveFeedback] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -449,6 +452,81 @@ export default function SettingsScreen() {
       return;
     }
     mutateCategoryChecklist([...activeChecklistItems, trimmed]);
+  };
+
+  const careTipsTemplates = useMemo(
+    () => settingsData?.careTipsTemplates ?? {},
+    [settingsData?.careTipsTemplates]
+  );
+
+  const careTipCategories = useMemo(
+    () =>
+      mergeApplianceTypes([
+        ...(settingsData?.customApplianceTypes ?? []),
+        ...Object.keys(careTipsTemplates),
+      ]),
+    [settingsData?.customApplianceTypes, careTipsTemplates]
+  );
+
+  const activeCareTips = useMemo(
+    () => resolveChecklistForCategory(careTipsTemplates, selectedCareCategory),
+    [careTipsTemplates, selectedCareCategory]
+  );
+
+  const updateCareTipsMutation = useMutation({
+    mutationFn: (templates: Record<string, string[]>) =>
+      tenantSettingsApi.updateCareTips(templates),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      setNewCareTip('');
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const resetCareTipsMutation = useMutation({
+    mutationFn: () => tenantSettingsApi.resetCareTips(),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const mutateCategoryCareTips = (nextTips: string[]) => {
+    const nextMap: Record<string, string[]> = {};
+    const targetLower = selectedCareCategory.trim().toLowerCase();
+    let replaced = false;
+    for (const [key, tips] of Object.entries(careTipsTemplates)) {
+      if (key.trim().toLowerCase() === targetLower) {
+        nextMap[key] = nextTips;
+        replaced = true;
+      } else {
+        nextMap[key] = tips;
+      }
+    }
+    if (!replaced) {
+      nextMap[selectedCareCategory] = nextTips;
+    }
+    updateCareTipsMutation.mutate(nextMap);
+  };
+
+  const handleAddCareTip = () => {
+    const trimmed = newCareTip.trim();
+    if (!trimmed) return;
+    if (activeCareTips.some((tip) => tip.toLowerCase() === trimmed.toLowerCase())) {
+      setNewCareTip('');
+      return;
+    }
+    mutateCategoryCareTips([...activeCareTips, trimmed]);
   };
 
   const toggleUserStatusMutation = useMutation({
@@ -1377,6 +1455,155 @@ export default function SettingsScreen() {
                       hitSlop={6}
                     >
                       <X size={13} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Post-Delivery Appliance Care Tips Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.printHeaderTitleRow}>
+              <Lightbulb size={14} color={colors.successDark} strokeWidth={2.2} />
+              <Text style={styles.cardOverline}>
+                {locale === 'pt-BR' ? 'DICAS DE CONSERVAÇÃO' : 'APPLIANCE CARE TIPS'}
+              </Text>
+            </View>
+            {isOwner ? (
+              <Pressable
+                disabled={resetCareTipsMutation.isPending}
+                onPress={() => resetCareTipsMutation.mutate()}
+                hitSlop={8}
+                style={styles.printHeaderTitleRow}
+              >
+                <RotateCcw size={12} color={colors.brandPrimary} />
+                <Text style={styles.addMemberLink}>
+                  {locale === 'pt-BR' ? 'Padrões' : 'Defaults'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Text style={styles.langSubtitle}>
+            {locale === 'pt-BR'
+              ? 'Exibidas ao cliente no /track e comprovante após a entrega para aumentar a vida útil do aparelho.'
+              : 'Displayed to customers on /track and receipts after delivery to help appliances last longer.'}
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+          >
+            {careTipCategories.map((cat) => {
+              const active = cat === selectedCareCategory;
+              const count = resolveChecklistForCategory(careTipsTemplates, cat).length;
+              return (
+                <Pressable
+                  key={cat}
+                  onPress={() => setSelectedCareCategory(cat)}
+                  style={[
+                    styles.customChip,
+                    active && {
+                      backgroundColor: colors.successSoft,
+                      borderColor: colors.successBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.customChipText,
+                      active && { color: colors.successDark, fontFamily: fonts.bodySemiBold },
+                    ]}
+                  >
+                    {count > 0 ? `${cat} (${count})` : cat}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {isOwner ? (
+            <View style={styles.addCustomRow}>
+              <TextInput
+                value={newCareTip}
+                onChangeText={setNewCareTip}
+                placeholder={
+                  locale === 'pt-BR'
+                    ? `Nova dica para ${selectedCareCategory}...`
+                    : `New care tip for ${selectedCareCategory}...`
+                }
+                placeholderTextColor={colors.textMuted}
+                style={styles.customTypeInput}
+                maxLength={240}
+                returnKeyType="done"
+                onSubmitEditing={handleAddCareTip}
+              />
+              <Pressable
+                disabled={!newCareTip.trim() || updateCareTipsMutation.isPending}
+                onPress={handleAddCareTip}
+                style={[
+                  styles.addCustomBtn,
+                  (!newCareTip.trim() || updateCareTipsMutation.isPending) &&
+                    styles.addCustomBtnDisabled,
+                ]}
+              >
+                {updateCareTipsMutation.isPending ? (
+                  <ActivityIndicator size="small" color={colors.textOnDark} />
+                ) : (
+                  <Plus size={18} color={colors.textOnDark} strokeWidth={2.4} />
+                )}
+              </Pressable>
+            </View>
+          ) : null}
+
+          {activeCareTips.length === 0 ? (
+            <Text style={styles.customEmptyText}>
+              {locale === 'pt-BR'
+                ? `Nenhuma dica configurada para ${selectedCareCategory}.`
+                : `No care tips configured for ${selectedCareCategory}.`}
+            </Text>
+          ) : (
+            <View style={{ gap: 6 }}>
+              {activeCareTips.map((tip) => (
+                <View
+                  key={tip}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    backgroundColor: colors.successSoft,
+                    borderWidth: 1,
+                    borderColor: colors.successBorder,
+                    borderRadius: radius.md,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontFamily: fonts.bodyRegular,
+                      fontSize: 12,
+                      color: colors.textPrimary,
+                      lineHeight: 17,
+                    }}
+                  >
+                    • {tip}
+                  </Text>
+                  {isOwner ? (
+                    <Pressable
+                      disabled={updateCareTipsMutation.isPending}
+                      onPress={() =>
+                        mutateCategoryCareTips(activeCareTips.filter((x) => x !== tip))
+                      }
+                      hitSlop={6}
+                    >
+                      <X size={14} color={colors.textMuted} />
                     </Pressable>
                   ) : null}
                 </View>

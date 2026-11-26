@@ -157,6 +157,7 @@ export interface TenantSettingsResponse {
   shopAddress: string | null;
   businessHours: string | null;
   warrantyTerms: string | null;
+  careTipsTemplates: Record<string, string[]>;
 }
 
 export interface UpdateShopBrandingRequest {
@@ -438,6 +439,7 @@ export interface PublicOrderItemResponse {
   intakeChecklist?: IntakeChecklistEntry[];
   discardedAt: string | null;
   photos: PublicOrderItemPhotoResponse[];
+  careTips?: string[];
 }
 
 export interface PublicOrderResponse {

@@ -132,6 +132,15 @@ export const tenantSettingsApi = {
       method: 'PUT',
       body: payload,
     }),
+  updateCareTips: (templates: Record<string, string[]>) =>
+    apiRequest<TenantSettingsResponse>('/api/v1/tenant/settings/care-tips', {
+      method: 'PUT',
+      body: { templates },
+    }),
+  resetCareTips: () =>
+    apiRequest<TenantSettingsResponse>('/api/v1/tenant/settings/care-tips', {
+      method: 'DELETE',
+    }),
 };
 
 export const customersApi = {
