@@ -16,9 +16,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image } from 'expo-image';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Check,
   ClipboardCheck,
+  ImagePlus,
   Info,
   KeyRound,
   LogOut,
@@ -29,6 +33,7 @@ import {
   QrCode,
   RotateCcw,
   Settings,
+  Trash2,
   X,
 } from 'lucide-react-native';
 import { partsCatalogApi, tenantSettingsApi, usersApi } from '@/api/endpoints';
@@ -156,6 +161,14 @@ export default function SettingsScreen() {
   const [pixKeyDraft, setPixKeyDraft] = useState<string | null>(null);
   const [pixReceiverNameDraft, setPixReceiverNameDraft] = useState<string | null>(null);
   const [pixReceiverCityDraft, setPixReceiverCityDraft] = useState<string | null>(null);
+  const [logoDraft, setLogoDraft] = useState<string | null | undefined>(undefined);
+  const [shopAddressDraft, setShopAddressDraft] = useState<string | null>(null);
+  const [businessHoursDraft, setBusinessHoursDraft] = useState<string | null>(null);
+  const [warrantyTermsDraft, setWarrantyTermsDraft] = useState<string | null>(null);
+  const [brandingFeedback, setBrandingFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const [activeTemplateStage, setActiveTemplateStage] = useState<WhatsappMessageStage>('INTAKE');
   const [intakeDraft, setIntakeDraft] = useState<string | null>(null);
@@ -207,6 +220,10 @@ export default function SettingsScreen() {
   const pixKeyInput = pixKeyDraft ?? (settingsData?.pixKey ?? '');
   const pixReceiverNameInput = pixReceiverNameDraft ?? (settingsData?.pixReceiverName ?? '');
   const pixReceiverCityInput = pixReceiverCityDraft ?? (settingsData?.pixReceiverCity ?? '');
+  const currentLogoUrl = logoDraft !== undefined ? logoDraft : (settingsData?.shopLogoDataUrl ?? null);
+  const shopAddressInput = shopAddressDraft ?? (settingsData?.shopAddress ?? '');
+  const businessHoursInput = businessHoursDraft ?? (settingsData?.businessHours ?? '');
+  const warrantyTermsInput = warrantyTermsDraft ?? (settingsData?.warrantyTerms ?? '');
 
   const intakeTemplate =
     intakeDraft ??
@@ -338,6 +355,73 @@ export default function SettingsScreen() {
       );
     },
   });
+
+  const updateBrandingMutation = useMutation({
+    mutationFn: () =>
+      tenantSettingsApi.updateBranding({
+        shopLogoDataUrl: logoDraft === undefined ? undefined : (logoDraft ?? undefined),
+        clearLogo: logoDraft === null ? true : undefined,
+        shopAddress: shopAddressInput.trim(),
+        businessHours: businessHoursInput.trim(),
+        warrantyTerms: warrantyTermsInput.trim(),
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      setLogoDraft(undefined);
+      setShopAddressDraft(null);
+      setBusinessHoursDraft(null);
+      setWarrantyTermsDraft(null);
+      setBrandingFeedback({
+        type: 'success',
+        text:
+          locale === 'pt-BR'
+            ? 'Identidade visual e termos atualizados.'
+            : 'Shop branding and terms saved.',
+      });
+    },
+    onError: (err) => {
+      setBrandingFeedback({
+        type: 'error',
+        text: err instanceof Error ? err.message : t.common.errorGeneric,
+      });
+    },
+  });
+
+  const handlePickLogo = async () => {
+    setBrandingFeedback(null);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Permissão necessária' : 'Permission required',
+        locale === 'pt-BR'
+          ? 'Permita o acesso à galeria para escolher a logo da oficina.'
+          : 'Allow photo library access to pick your workshop logo.'
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]?.uri) return;
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 256 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      if (manipulated.base64) {
+        setLogoDraft(`data:image/jpeg;base64,${manipulated.base64}`);
+      }
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao processar imagem' : 'Could not process image',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    }
+  };
 
   const mutateCategoryChecklist = (nextItems: string[]) => {
     const nextMap: Record<string, string[]> = {};
@@ -903,6 +987,199 @@ export default function SettingsScreen() {
               )}
             </View>
           )}
+        </View>
+
+        {/* Branding & Custom Warranty Terms Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.printHeaderTitleRow}>
+              <ImagePlus size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+              <Text style={styles.cardOverline}>
+                {locale === 'pt-BR'
+                  ? 'IDENTIDADE VISUAL & TERMOS'
+                  : 'SHOP BRANDING & TERMS'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.langSubtitle}>
+            {locale === 'pt-BR'
+              ? 'Exibidos na página /track, no comprovante digital e no PDF de garantia da oficina.'
+              : 'Displayed on /track, digital receipt, and warranty PDF.'}
+          </Text>
+
+          <View style={styles.formGap}>
+            {/* Logo row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {currentLogoUrl ? (
+                <Image
+                  source={{ uri: currentLogoUrl }}
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: radius.md,
+                    borderWidth: 1,
+                    borderColor: colors.borderSubtle,
+                    backgroundColor: '#FFFFFF',
+                  }}
+                  contentFit="contain"
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: radius.md,
+                    borderWidth: 1,
+                    borderStyle: 'dashed',
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.bgCanvas,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ImagePlus size={22} color={colors.textMuted} />
+                </View>
+              )}
+
+              {isOwner ? (
+                <View style={{ flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <Button
+                    label={
+                      currentLogoUrl
+                        ? locale === 'pt-BR'
+                          ? 'Trocar logo'
+                          : 'Change logo'
+                        : locale === 'pt-BR'
+                          ? 'Escolher logo'
+                          : 'Pick logo'
+                    }
+                    variant="secondary"
+                    fullWidth={false}
+                    onPress={() => void handlePickLogo()}
+                  />
+                  {currentLogoUrl ? (
+                    <Pressable
+                      onPress={() => setLogoDraft(null)}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: radius.md,
+                        borderWidth: 1,
+                        borderColor: colors.dangerBorder,
+                        backgroundColor: colors.dangerSoft,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Trash2 size={16} color={colors.danger} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={[styles.langSubtitle, { flex: 1 }]}>
+                  {currentLogoUrl
+                    ? locale === 'pt-BR'
+                      ? 'Logo configurada pela oficina'
+                      : 'Shop logo configured'
+                    : locale === 'pt-BR'
+                      ? 'Sem logo cadastrada'
+                      : 'No logo configured'}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {locale === 'pt-BR' ? 'Endereço da oficina (opcional)' : 'Shop address (optional)'}
+              </Text>
+              <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                <TextInput
+                  value={shopAddressInput}
+                  onChangeText={setShopAddressDraft}
+                  placeholder="Rua das Flores, 123 - Centro"
+                  placeholderTextColor={colors.textMuted}
+                  editable={isOwner}
+                  maxLength={300}
+                  style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {locale === 'pt-BR' ? 'Horário de atendimento (opcional)' : 'Business hours (optional)'}
+              </Text>
+              <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                <TextInput
+                  value={businessHoursInput}
+                  onChangeText={setBusinessHoursDraft}
+                  placeholder="Seg a Sex 8h30–18h · Sáb 8h30–13h"
+                  placeholderTextColor={colors.textMuted}
+                  editable={isOwner}
+                  maxLength={200}
+                  style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {locale === 'pt-BR'
+                  ? 'Termo de garantia personalizado (opcional)'
+                  : 'Custom warranty terms (optional)'}
+              </Text>
+              <TextInput
+                value={warrantyTermsInput}
+                onChangeText={setWarrantyTermsDraft}
+                editable={isOwner}
+                multiline
+                maxLength={3000}
+                textAlignVertical="top"
+                placeholder={
+                  locale === 'pt-BR'
+                    ? 'Deixe em branco para usar o termo padrão do BenchOS nos comprovantes.'
+                    : 'Leave blank to use default BenchOS warranty terms.'
+                }
+                placeholderTextColor={colors.textMuted}
+                style={[styles.textarea, !isOwner && styles.inputReadonly]}
+              />
+            </View>
+
+            {brandingFeedback ? (
+              <View
+                style={[
+                  styles.feedbackBox,
+                  brandingFeedback.type === 'success'
+                    ? styles.feedbackSuccess
+                    : styles.feedbackError,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.feedbackText,
+                    brandingFeedback.type === 'success'
+                      ? styles.feedbackTextSuccess
+                      : styles.feedbackTextError,
+                  ]}
+                >
+                  {brandingFeedback.text}
+                </Text>
+              </View>
+            ) : null}
+
+            {isOwner ? (
+              <Button
+                label={locale === 'pt-BR' ? 'Salvar identidade' : 'Save branding'}
+                icon={<Check size={16} color={colors.textOnDark} strokeWidth={2.4} />}
+                loading={updateBrandingMutation.isPending}
+                onPress={() => {
+                  setBrandingFeedback(null);
+                  updateBrandingMutation.mutate();
+                }}
+              />
+            ) : null}
+          </View>
         </View>
 
         {/* Custom Appliance Types Card */}

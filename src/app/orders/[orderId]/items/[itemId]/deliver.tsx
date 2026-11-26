@@ -233,6 +233,7 @@ export default function DeliverItemScreen() {
     try {
       await shareConsolidatedOrderReceiptPdf({
         tenant: session.tenant,
+        settings: settingsQuery.data ?? null,
         order,
         locale,
         overrideItem: deliveredReceipt.item,

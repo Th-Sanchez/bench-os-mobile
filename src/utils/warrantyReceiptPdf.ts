@@ -2,7 +2,7 @@ import { Linking, Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { financeApi } from '@/api/endpoints';
+import { financeApi, tenantSettingsApi } from '@/api/endpoints';
 import { API_BASE_URL } from '@/api/http';
 import type { Locale } from '@/i18n/translations';
 import type {
@@ -11,6 +11,7 @@ import type {
   ServiceOrderItemResponse,
   ServiceOrderResponse,
   TenantResponse,
+  TenantSettingsResponse,
   TransactionPaymentMethod,
 } from '@/types/api';
 
@@ -30,6 +31,7 @@ export interface WarrantyInfo {
 
 export interface BuildOrderWarrantyReceiptParams {
   tenant: TenantResponse;
+  settings?: TenantSettingsResponse | null;
   order: ServiceOrderResponse;
   deliveredItems: ServiceOrderItemResponse[];
   payments: ReceiptPaymentPart[];
@@ -38,6 +40,7 @@ export interface BuildOrderWarrantyReceiptParams {
 
 export interface ShareOrderWarrantyReceiptParams {
   tenant: TenantResponse;
+  settings?: TenantSettingsResponse | null;
   order: ServiceOrderResponse;
   locale: Locale;
   /**
@@ -228,8 +231,18 @@ function toSignatureDataUri(svg: string | null | undefined): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(trimmed)}`;
 }
 
+function sanitizeRasterDataUrl(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
+}
+
 export function buildOrderWarrantyReceiptHtml({
   tenant,
+  settings,
   order,
   deliveredItems,
   payments,
@@ -447,7 +460,10 @@ export function buildOrderWarrantyReceiptHtml({
             `
         }
 
-        <ol class="warranty-terms">
+        ${
+          settings?.warrantyTerms?.trim()
+            ? `<div class="warranty-custom">${escapeHtml(settings.warrantyTerms.trim())}</div>`
+            : `<ol class="warranty-terms">
           ${
             isPt
               ? `
@@ -461,7 +477,8 @@ export function buildOrderWarrantyReceiptHtml({
                 <li>To claim warranty within the coverage period, present this certificate or reference <strong>Order #${order.orderNumber}</strong>.</li>
               `
           }
-        </ol>
+        </ol>`
+        }
       </section>
     `
       : `
@@ -930,6 +947,26 @@ export function buildOrderWarrantyReceiptHtml({
     .warranty-terms li {
       margin-bottom: 4px;
     }
+    .warranty-custom {
+      color: #1E293B;
+      font-size: 10.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .banner-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .banner-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 9px;
+      object-fit: contain;
+      background: #FFFFFF;
+      padding: 3px;
+      flex-shrink: 0;
+    }
     .neutral-note {
       margin: 4px 0 0 0;
       font-size: 11.5px;
@@ -991,11 +1028,20 @@ export function buildOrderWarrantyReceiptHtml({
 <body>
   <div class="sheet">
     <header class="banner">
-      <div>
-        <div class="shop-eyebrow">${isPt ? 'COMPROVANTE DE ENTREGA & GARANTIA' : 'DELIVERY RECEIPT & WARRANTY'}</div>
-        <h1 class="shop-name">${escapeHtml(tenant.name)}</h1>
-        ${docFormatted ? `<p class="shop-meta">${isPt ? 'CNPJ/CPF' : 'Tax ID'}: ${escapeHtml(docFormatted)}</p>` : ''}
-        <p class="shop-meta">${isPt ? 'Telefone / WhatsApp' : 'Phone / WhatsApp'}: ${escapeHtml(formatPhoneDisplay(tenant.phone))}</p>
+      <div class="banner-brand">
+        ${
+          sanitizeRasterDataUrl(settings?.shopLogoDataUrl)
+            ? `<img class="banner-logo" src="${sanitizeRasterDataUrl(settings?.shopLogoDataUrl)}" alt="Logo" />`
+            : ''
+        }
+        <div>
+          <div class="shop-eyebrow">${isPt ? 'COMPROVANTE DE ENTREGA & GARANTIA' : 'DELIVERY RECEIPT & WARRANTY'}</div>
+          <h1 class="shop-name">${escapeHtml(tenant.name)}</h1>
+          ${docFormatted ? `<p class="shop-meta">${isPt ? 'CNPJ/CPF' : 'Tax ID'}: ${escapeHtml(docFormatted)}</p>` : ''}
+          <p class="shop-meta">${isPt ? 'Telefone / WhatsApp' : 'Phone / WhatsApp'}: ${escapeHtml(formatPhoneDisplay(tenant.phone))}</p>
+          ${settings?.shopAddress ? `<p class="shop-meta">${escapeHtml(settings.shopAddress)}</p>` : ''}
+          ${settings?.businessHours ? `<p class="shop-meta">${isPt ? 'Horário' : 'Hours'}: ${escapeHtml(settings.businessHours)}</p>` : ''}
+        </div>
       </div>
       <div class="doc-box">
         <div class="doc-badge">OS #${order.orderNumber}</div>
@@ -1217,11 +1263,14 @@ async function renderAndSharePdf(html: string, filename: string, dialogTitle: st
  */
 export async function shareConsolidatedOrderReceiptPdf({
   tenant,
+  settings,
   order,
   locale,
   overrideItem,
   overrideItemPayments,
 }: ShareOrderWarrantyReceiptParams): Promise<void> {
+  const resolvedSettings =
+    settings !== undefined ? settings : await tenantSettingsApi.get().catch(() => null);
   const mergedItems = overrideItem
     ? order.items.map((existing) => (existing.id === overrideItem.id ? overrideItem : existing))
     : order.items;
@@ -1263,6 +1312,7 @@ export async function shareConsolidatedOrderReceiptPdf({
   const allPayments = paymentArrays.flat();
   const html = buildOrderWarrantyReceiptHtml({
     tenant,
+    settings: resolvedSettings,
     order: mergedOrder,
     deliveredItems,
     payments: allPayments,

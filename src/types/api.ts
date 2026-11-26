@@ -153,6 +153,18 @@ export interface TenantSettingsResponse {
   pixKey: string | null;
   pixReceiverName: string | null;
   pixReceiverCity: string | null;
+  shopLogoDataUrl: string | null;
+  shopAddress: string | null;
+  businessHours: string | null;
+  warrantyTerms: string | null;
+}
+
+export interface UpdateShopBrandingRequest {
+  shopLogoDataUrl?: string;
+  clearLogo?: boolean;
+  shopAddress?: string;
+  businessHours?: string;
+  warrantyTerms?: string;
 }
 
 export interface UpdateTenantSettingsRequest {
@@ -431,6 +443,10 @@ export interface PublicOrderItemResponse {
 export interface PublicOrderResponse {
   shopName: string;
   shopPhone: string | null;
+  shopLogoDataUrl?: string | null;
+  shopAddress?: string | null;
+  businessHours?: string | null;
+  warrantyTerms?: string | null;
   googleReviewUrl: string | null;
   pixAmount?: number | null;
   pixPayload?: string | null;
