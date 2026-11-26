@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Package, Plus, Sparkles, TrendingUp, X } from 'lucide-react-native';
+import { Layers, Package, Plus, Sparkles, Star, Trash2, TrendingUp, X } from 'lucide-react-native';
 import { ordersApi, partsCatalogApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { PartsCatalogModal } from '@/components/settings/PartsCatalogModal';
@@ -21,7 +21,11 @@ import { TextField } from '@/components/ui/TextField';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
-import type { PartCatalogResponse, ServiceOrderItemResponse } from '@/types/api';
+import type {
+  PartCatalogResponse,
+  QuoteOptionRequest,
+  ServiceOrderItemResponse,
+} from '@/types/api';
 import {
   formatCurrencyInput,
   maskCurrencyBRL,
@@ -160,6 +164,105 @@ function QuoteEditBody({
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  type OptionDraft = {
+    label: string;
+    description: string;
+    laborInput: string;
+    partsInput: string;
+    partsActualInput: string;
+    discountInput: string;
+    warrantyInput: string;
+    recommended: boolean;
+  };
+
+  const initialOptions: OptionDraft[] = (item.quoteOptions ?? []).map((opt) => ({
+    label: opt.label,
+    description: opt.description ?? '',
+    laborInput: formatCurrencyInput(opt.laborCost),
+    partsInput: formatCurrencyInput(opt.partsCost),
+    partsActualInput: formatCurrencyInput(opt.partsCostActual),
+    discountInput: formatCurrencyInput(opt.discount),
+    warrantyInput: String(opt.warrantyDays || 90),
+    recommended: opt.recommended,
+  }));
+  const [multiOptionMode, setMultiOptionMode] = useState(initialOptions.length > 0);
+  const [optionDrafts, setOptionDrafts] = useState<OptionDraft[]>(initialOptions);
+
+  const enableMultiOptionMode = () => {
+    setMultiOptionMode(true);
+    if (optionDrafts.length === 0) {
+      setOptionDrafts([
+        {
+          label: locale === 'pt-BR' ? 'Peça Original' : 'Original Part',
+          description: '',
+          laborInput,
+          partsInput,
+          partsActualInput,
+          discountInput,
+          warrantyInput: warrantyInput || '90',
+          recommended: true,
+        },
+        {
+          label: locale === 'pt-BR' ? 'Peça Paralela (Econômica)' : 'Economy Part',
+          description: '',
+          laborInput,
+          partsInput: '',
+          partsActualInput: '',
+          discountInput: '',
+          warrantyInput: '90',
+          recommended: false,
+        },
+      ]);
+    }
+  };
+
+  const disableMultiOptionMode = () => {
+    setMultiOptionMode(false);
+    setOptionDrafts([]);
+  };
+
+  const updateOptionDraft = (idx: number, patch: Partial<OptionDraft>) => {
+    setOptionDrafts((prev) =>
+      prev.map((opt, i) => {
+        if (patch.recommended === true) {
+          return i === idx ? { ...opt, ...patch, recommended: true } : { ...opt, recommended: false };
+        }
+        return i === idx ? { ...opt, ...patch } : opt;
+      })
+    );
+  };
+
+  const addOptionDraft = () => {
+    if (optionDrafts.length >= 4) return;
+    setOptionDrafts((prev) => [
+      ...prev,
+      {
+        label: locale === 'pt-BR' ? `Opção ${prev.length + 1}` : `Option ${prev.length + 1}`,
+        description: '',
+        laborInput,
+        partsInput: '',
+        partsActualInput: '',
+        discountInput: '',
+        warrantyInput: '90',
+        recommended: prev.length === 0,
+      },
+    ]);
+  };
+
+  const removeOptionDraft = (idx: number) => {
+    setOptionDrafts((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (next.length === 0) {
+        setMultiOptionMode(false);
+        return [];
+      }
+      if (!next.some((o) => o.recommended)) {
+        next[0] = { ...next[0], recommended: true };
+      }
+      return next;
+    });
+  };
+
   const catalogQuery = useQuery({
     queryKey: ['parts-catalog'],
     queryFn: () => partsCatalogApi.list(),
@@ -249,13 +352,29 @@ function QuoteEditBody({
   const saveMutation = useMutation({
     mutationFn: () => {
       const warrantyDays = Math.max(0, Number.parseInt(warrantyInput.replace(/\D/g, ''), 10) || 0);
+      let quoteOptionsPayload: QuoteOptionRequest[] = [];
+      if (multiOptionMode && optionDrafts.length > 0) {
+        quoteOptionsPayload = optionDrafts.map((opt, idx) => ({
+          label: opt.label.trim() || (locale === 'pt-BR' ? `Opção ${idx + 1}` : `Option ${idx + 1}`),
+          description: opt.description.trim() || undefined,
+          laborCost: parseCurrencyBRL(opt.laborInput),
+          partsCost: parseCurrencyBRL(opt.partsInput),
+          partsCostActual: parseCurrencyBRL(opt.partsActualInput),
+          discount: parseCurrencyBRL(opt.discountInput),
+          warrantyDays: Math.max(0, Number.parseInt(opt.warrantyInput.replace(/\D/g, ''), 10) || 0),
+          recommended: opt.recommended,
+        }));
+      }
+      const primaryOpt =
+        quoteOptionsPayload.find((o) => o.recommended) ?? quoteOptionsPayload[0];
       return ordersApi.updateQuote(orderId, item.id, {
         technicalDiagnosis: diagnosis.trim() || undefined,
-        laborCost: labor,
-        partsCost: parts,
-        partsCostActual: partsActual,
-        discount,
-        warrantyDays,
+        laborCost: primaryOpt ? primaryOpt.laborCost : labor,
+        partsCost: primaryOpt ? primaryOpt.partsCost : parts,
+        partsCostActual: primaryOpt ? (primaryOpt.partsCostActual ?? 0) : partsActual,
+        discount: primaryOpt ? (primaryOpt.discount ?? 0) : discount,
+        warrantyDays: primaryOpt ? (primaryOpt.warrantyDays ?? 90) : warrantyDays,
+        quoteOptions: quoteOptionsPayload,
       });
     },
     onSuccess: () => {
@@ -465,115 +584,327 @@ function QuoteEditBody({
           style={styles.textarea}
         />
 
-        <View style={styles.row}>
-          <View style={styles.col}>
-            <TextField
-              label={locale === 'pt-BR' ? 'Mão de obra (R$)' : 'Labor (R$)'}
-              placeholder="0,00"
-              value={laborInput}
-              onChangeText={(val) => setLaborInput(maskCurrencyBRL(val))}
-              keyboardType="number-pad"
-              mono
-            />
-          </View>
-          <View style={styles.col}>
-            <TextField
-              label={locale === 'pt-BR' ? 'Peças — Cliente (R$)' : 'Parts — Client (R$)'}
-              placeholder="0,00"
-              value={partsInput}
-              onChangeText={(val) => setPartsInput(maskCurrencyBRL(val))}
-              keyboardType="number-pad"
-              mono
-            />
-          </View>
-        </View>
+        {!multiOptionMode ? (
+          <>
+            <View style={styles.row}>
+              <View style={styles.col}>
+                <TextField
+                  label={locale === 'pt-BR' ? 'Mão de obra (R$)' : 'Labor (R$)'}
+                  placeholder="0,00"
+                  value={laborInput}
+                  onChangeText={(val) => setLaborInput(maskCurrencyBRL(val))}
+                  keyboardType="number-pad"
+                  mono
+                />
+              </View>
+              <View style={styles.col}>
+                <TextField
+                  label={locale === 'pt-BR' ? 'Peças — Cliente (R$)' : 'Parts — Client (R$)'}
+                  placeholder="0,00"
+                  value={partsInput}
+                  onChangeText={(val) => setPartsInput(maskCurrencyBRL(val))}
+                  keyboardType="number-pad"
+                  mono
+                />
+              </View>
+            </View>
 
-        <View style={styles.row}>
-          <View style={styles.col}>
-            <TextField
-              label={locale === 'pt-BR' ? 'Custo peças — Interno' : 'Actual parts cost'}
-              placeholder="0,00"
-              value={partsActualInput}
-              onChangeText={(val) => setPartsActualInput(maskCurrencyBRL(val))}
-              keyboardType="number-pad"
-              mono
-            />
-          </View>
-          <View style={styles.col}>
-            <TextField
-              label={locale === 'pt-BR' ? 'Desconto (R$)' : 'Discount (R$)'}
-              placeholder="0,00"
-              value={discountInput}
-              onChangeText={(val) => setDiscountInput(maskCurrencyBRL(val))}
-              keyboardType="number-pad"
-              mono
-            />
-          </View>
-        </View>
+            <View style={styles.row}>
+              <View style={styles.col}>
+                <TextField
+                  label={locale === 'pt-BR' ? 'Custo peças — Interno' : 'Actual parts cost'}
+                  placeholder="0,00"
+                  value={partsActualInput}
+                  onChangeText={(val) => setPartsActualInput(maskCurrencyBRL(val))}
+                  keyboardType="number-pad"
+                  mono
+                />
+              </View>
+              <View style={styles.col}>
+                <TextField
+                  label={locale === 'pt-BR' ? 'Desconto (R$)' : 'Discount (R$)'}
+                  placeholder="0,00"
+                  value={discountInput}
+                  onChangeText={(val) => setDiscountInput(maskCurrencyBRL(val))}
+                  keyboardType="number-pad"
+                  mono
+                />
+              </View>
+            </View>
 
-        <View style={styles.row}>
-          <View style={styles.col}>
-            <TextField
-              label={locale === 'pt-BR' ? 'Garantia (dias)' : 'Warranty (days)'}
-              placeholder="90"
-              value={warrantyInput}
-              onChangeText={(val) => setWarrantyInput(maskInteger(val, 4))}
-              keyboardType="number-pad"
-              maxLength={4}
-              mono
-            />
-          </View>
-          <View style={styles.col} />
-        </View>
+            <View style={styles.row}>
+              <View style={styles.col}>
+                <TextField
+                  label={locale === 'pt-BR' ? 'Garantia (dias)' : 'Warranty (days)'}
+                  placeholder="90"
+                  value={warrantyInput}
+                  onChangeText={(val) => setWarrantyInput(maskInteger(val, 4))}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  mono
+                />
+              </View>
+              <View style={[styles.col, { justifyContent: 'flex-end' }]}>
+                <Pressable
+                  onPress={enableMultiOptionMode}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    borderWidth: 1,
+                    borderColor: colors.brandPrimaryBorder,
+                    backgroundColor: colors.brandPrimarySoft,
+                    borderRadius: radius.md,
+                    paddingVertical: 12,
+                    paddingHorizontal: 10,
+                  }}
+                >
+                  <Layers size={14} color={colors.brandPrimary} />
+                  <Text
+                    style={{
+                      fontFamily: fonts.bodySemiBold,
+                      fontSize: 12,
+                      color: colors.brandPrimary,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {locale === 'pt-BR' ? '+ Opções' : '+ Options'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
 
-        <View style={[styles.totalBox, computedTotal < 0 && styles.totalBoxError]}>
-          <Text style={styles.totalLabel}>
-            {locale === 'pt-BR' ? 'Total ao cliente' : 'Client total'}
-          </Text>
-          <Text style={[styles.totalValue, computedTotal < 0 && styles.totalValueError]}>
-            {formatCurrency(computedTotal)}
-          </Text>
-        </View>
-
-        {/* Internal Real Margin Preview */}
-        <View style={[styles.marginBox, estimatedNetProfit < 0 && styles.marginBoxDanger]}>
-          <View style={styles.marginLeft}>
-            <View style={styles.marginTitleRow}>
-              <TrendingUp
-                size={14}
-                color={estimatedNetProfit < 0 ? colors.dangerDark : colors.successDark}
-              />
-              <Text
-                style={[
-                  styles.marginTitle,
-                  estimatedNetProfit < 0 && styles.marginTitleDanger,
-                ]}
-              >
-                {locale === 'pt-BR' ? 'Lucro líquido estimado' : 'Estimated net profit'}
+            <View style={[styles.totalBox, computedTotal < 0 && styles.totalBoxError]}>
+              <Text style={styles.totalLabel}>
+                {locale === 'pt-BR' ? 'Total ao cliente' : 'Client total'}
+              </Text>
+              <Text style={[styles.totalValue, computedTotal < 0 && styles.totalValueError]}>
+                {formatCurrency(computedTotal)}
               </Text>
             </View>
-            <Text style={styles.marginSubtitle}>
-              {locale === 'pt-BR'
-                ? 'Uso interno — não aparece para o cliente'
-                : 'Internal only — hidden from customer'}
-            </Text>
-          </View>
-          <View style={styles.marginRight}>
-            <Text
-              style={[
-                styles.marginAmount,
-                estimatedNetProfit < 0 && styles.marginTitleDanger,
-              ]}
+
+            {/* Internal Real Margin Preview */}
+            <View style={[styles.marginBox, estimatedNetProfit < 0 && styles.marginBoxDanger]}>
+              <View style={styles.marginLeft}>
+                <View style={styles.marginTitleRow}>
+                  <TrendingUp
+                    size={14}
+                    color={estimatedNetProfit < 0 ? colors.dangerDark : colors.successDark}
+                  />
+                  <Text
+                    style={[
+                      styles.marginTitle,
+                      estimatedNetProfit < 0 && styles.marginTitleDanger,
+                    ]}
+                  >
+                    {locale === 'pt-BR' ? 'Lucro líquido estimado' : 'Estimated net profit'}
+                  </Text>
+                </View>
+                <Text style={styles.marginSubtitle}>
+                  {locale === 'pt-BR'
+                    ? 'Uso interno — não aparece para o cliente'
+                    : 'Internal only — hidden from customer'}
+                </Text>
+              </View>
+              <View style={styles.marginRight}>
+                <Text
+                  style={[
+                    styles.marginAmount,
+                    estimatedNetProfit < 0 && styles.marginTitleDanger,
+                  ]}
+                >
+                  {estimatedNetProfit < 0
+                    ? `- ${formatCurrency(Math.abs(estimatedNetProfit))}`
+                    : formatCurrency(estimatedNetProfit)}
+                </Text>
+                {computedTotal > 0 ? (
+                  <Text style={styles.marginPct}>{marginPct}%</Text>
+                ) : null}
+              </View>
+            </View>
+          </>
+        ) : (
+          <View style={{ gap: spacing.md }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: colors.brandPrimarySoft,
+                borderColor: colors.brandPrimaryBorder,
+                borderWidth: 1,
+                borderRadius: radius.lg,
+                padding: spacing.md,
+                gap: spacing.sm,
+              }}
             >
-              {estimatedNetProfit < 0
-                ? `- ${formatCurrency(Math.abs(estimatedNetProfit))}`
-                : formatCurrency(estimatedNetProfit)}
-            </Text>
-            {computedTotal > 0 ? (
-              <Text style={styles.marginPct}>{marginPct}%</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bodyBold, fontSize: 13, color: colors.infoDark }}>
+                  {locale === 'pt-BR' ? 'Múltiplas Opções (/track)' : 'Multiple Options (/track)'}
+                </Text>
+                <Text style={{ fontFamily: fonts.bodyRegular, fontSize: 11, color: colors.textSecondary }}>
+                  {locale === 'pt-BR'
+                    ? 'O cliente escolhe qual opção aprovar no link.'
+                    : 'Customer selects which option to approve.'}
+                </Text>
+              </View>
+              <Pressable onPress={disableMultiOptionMode} hitSlop={8}>
+                <Text style={{ fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.danger }}>
+                  {locale === 'pt-BR' ? 'Preço único' : 'Single price'}
+                </Text>
+              </Pressable>
+            </View>
+
+            {optionDrafts.map((opt, idx) => {
+              const oTotal = Math.max(
+                0,
+                Math.round(
+                  (parseCurrencyBRL(opt.laborInput) +
+                    parseCurrencyBRL(opt.partsInput) -
+                    parseCurrencyBRL(opt.discountInput)) *
+                    100
+                ) / 100
+              );
+              return (
+                <View
+                  key={idx}
+                  style={{
+                    backgroundColor: colors.bgSurface,
+                    borderWidth: 1,
+                    borderColor: opt.recommended ? colors.brandPrimary : colors.borderSubtle,
+                    borderRadius: radius.lg,
+                    padding: spacing.md,
+                    gap: spacing.sm,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Pressable
+                      onPress={() => updateOptionDraft(idx, { recommended: true })}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                    >
+                      <Star
+                        size={14}
+                        color={opt.recommended ? colors.brandPrimary : colors.textMuted}
+                      />
+                      <Text
+                        style={{
+                          fontFamily: fonts.bodyBold,
+                          fontSize: 12,
+                          color: opt.recommended ? colors.brandPrimary : colors.textSecondary,
+                        }}
+                      >
+                        #{idx + 1}{' '}
+                        {opt.recommended
+                          ? locale === 'pt-BR'
+                            ? '· Recomendada'
+                            : '· Recommended'
+                          : locale === 'pt-BR'
+                            ? '· Marcar rec.'
+                            : '· Set rec.'}
+                      </Text>
+                    </Pressable>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Text style={{ fontFamily: fonts.monoBold, fontSize: 14, color: colors.textPrimary }}>
+                        {formatCurrency(oTotal)}
+                      </Text>
+                      <Pressable onPress={() => removeOptionDraft(idx)} hitSlop={8}>
+                        <Trash2 size={15} color={colors.danger} />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  <TextField
+                    label={locale === 'pt-BR' ? 'Título da opção' : 'Option title'}
+                    placeholder="Ex.: Peça Original"
+                    value={opt.label}
+                    onChangeText={(val) => updateOptionDraft(idx, { label: val })}
+                  />
+                  <TextField
+                    label={locale === 'pt-BR' ? 'Descrição (opcional)' : 'Description (optional)'}
+                    placeholder="Ex.: Garantia estendida, peça genuína..."
+                    value={opt.description}
+                    onChangeText={(val) => updateOptionDraft(idx, { description: val })}
+                  />
+                  <View style={styles.row}>
+                    <View style={styles.col}>
+                      <TextField
+                        label={locale === 'pt-BR' ? 'Mão de obra' : 'Labor'}
+                        placeholder="0,00"
+                        value={opt.laborInput}
+                        onChangeText={(val) =>
+                          updateOptionDraft(idx, { laborInput: maskCurrencyBRL(val) })
+                        }
+                        keyboardType="number-pad"
+                        mono
+                      />
+                    </View>
+                    <View style={styles.col}>
+                      <TextField
+                        label={locale === 'pt-BR' ? 'Peças (cliente)' : 'Parts'}
+                        placeholder="0,00"
+                        value={opt.partsInput}
+                        onChangeText={(val) =>
+                          updateOptionDraft(idx, { partsInput: maskCurrencyBRL(val) })
+                        }
+                        keyboardType="number-pad"
+                        mono
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.row}>
+                    <View style={styles.col}>
+                      <TextField
+                        label={locale === 'pt-BR' ? 'Custo real' : 'Actual cost'}
+                        placeholder="0,00"
+                        value={opt.partsActualInput}
+                        onChangeText={(val) =>
+                          updateOptionDraft(idx, { partsActualInput: maskCurrencyBRL(val) })
+                        }
+                        keyboardType="number-pad"
+                        mono
+                      />
+                    </View>
+                    <View style={styles.col}>
+                      <TextField
+                        label={locale === 'pt-BR' ? 'Garantia (dias)' : 'Warranty (d)'}
+                        placeholder="90"
+                        value={opt.warrantyInput}
+                        onChangeText={(val) =>
+                          updateOptionDraft(idx, { warrantyInput: maskInteger(val, 4) })
+                        }
+                        keyboardType="number-pad"
+                        mono
+                      />
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+
+            {optionDrafts.length < 4 ? (
+              <Pressable
+                onPress={addOptionDraft}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  borderWidth: 1,
+                  borderStyle: 'dashed',
+                  borderColor: colors.brandPrimary,
+                  borderRadius: radius.lg,
+                  paddingVertical: 11,
+                }}
+              >
+                <Plus size={15} color={colors.brandPrimary} />
+                <Text style={{ fontFamily: fonts.bodySemiBold, fontSize: 13, color: colors.brandPrimary }}>
+                  {locale === 'pt-BR' ? 'Adicionar opção' : 'Add option'}
+                </Text>
+              </Pressable>
             ) : null}
           </View>
-        </View>
+        )}
       </ScrollView>
 
       <View
