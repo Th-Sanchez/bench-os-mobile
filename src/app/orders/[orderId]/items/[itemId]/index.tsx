@@ -42,6 +42,8 @@ import {
 import { financeApi, ordersApi, photosApi } from '@/api/endpoints';
 import { API_BASE_URL, ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
+import { ItemPartRequestsSection } from '@/components/orders/ItemPartRequestsSection';
+import { ItemTechnicianSection } from '@/components/orders/ItemTechnicianSection';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
 import { SignaturePreview } from '@/components/orders/SignaturePad';
 import { WarrantyReturnModal } from '@/components/orders/WarrantyReturnModal';
@@ -165,8 +167,20 @@ export default function ApplianceDetailScreen() {
   };
 
   const transitionMutation = useMutation({
-    mutationFn: ({ status, cancellationReason }: { status: ItemStatus; cancellationReason?: string }) =>
-      ordersApi.transitionStatus(orderId, itemId, { status, cancellationReason }),
+    mutationFn: ({
+      status,
+      cancellationReason,
+      quoteOptionId,
+    }: {
+      status: ItemStatus;
+      cancellationReason?: string;
+      quoteOptionId?: string;
+    }) =>
+      ordersApi.transitionStatus(orderId, itemId, {
+        status,
+        cancellationReason,
+        quoteOptionId,
+      }),
     onSuccess: () => {
       invalidateAll();
       setCancelModalOpen(false);
@@ -829,6 +843,12 @@ export default function ApplianceDetailScreen() {
           ) : null}
         </Card>
 
+        {/* Optional Assigned Technician Section (only shown when enabled or assigned) */}
+        <ItemTechnicianSection orderId={orderId} item={item} />
+
+        {/* Required Parts Section */}
+        <ItemPartRequestsSection orderId={orderId} item={item} />
+
         {/* Photos Card */}
         <Card style={styles.photosCard}>
           <View style={styles.sectionHeaderBetween}>
@@ -918,9 +938,23 @@ export default function ApplianceDetailScreen() {
         {/* Quote & Pricing Card */}
         <Card style={styles.quoteCard}>
           <View style={styles.sectionHeaderBetween}>
-            <Text style={styles.cardSectionTitle}>
-              {locale === 'pt-BR' ? 'Orçamento' : 'Quote'}
-            </Text>
+            <View>
+              <Text style={styles.cardSectionTitle}>
+                {locale === 'pt-BR' ? 'Orçamento' : 'Quote'}
+              </Text>
+              {item.selectedQuoteOptionLabel ? (
+                <Text
+                  style={{
+                    fontFamily: fonts.bodySemiBold,
+                    fontSize: 11,
+                    color: colors.brandPrimary,
+                    marginTop: 2,
+                  }}
+                >
+                  {locale === 'pt-BR' ? 'Opção:' : 'Option:'} {item.selectedQuoteOptionLabel}
+                </Text>
+              ) : null}
+            </View>
             <View style={styles.quoteHeaderRight}>
               {isQuoteLocked ? (
                 <>
@@ -951,6 +985,82 @@ export default function ApplianceDetailScreen() {
               ) : null}
             </View>
           </View>
+
+          {item.quoteOptions && item.quoteOptions.length > 1 ? (
+            <View
+              style={{
+                backgroundColor: colors.brandPrimarySoft,
+                borderWidth: 1,
+                borderColor: colors.brandPrimaryBorder,
+                borderRadius: radius.md,
+                padding: spacing.sm,
+                gap: 6,
+                marginBottom: spacing.sm,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: fonts.bodyBold,
+                  fontSize: 11,
+                  color: colors.infoDark,
+                }}
+              >
+                {locale === 'pt-BR'
+                  ? `${item.quoteOptions.length} OPÇÕES OFERECIDAS NO /TRACK`
+                  : `${item.quoteOptions.length} QUOTE OPTIONS ON /TRACK`}
+              </Text>
+              {item.quoteOptions.map((opt) => {
+                const chosen = item.selectedQuoteOptionId === opt.id;
+                return (
+                  <View
+                    key={opt.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: chosen ? colors.successSoft : colors.bgSurface,
+                      borderWidth: 1,
+                      borderColor: chosen ? colors.successBorder : colors.borderSubtle,
+                      borderRadius: radius.md,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      gap: 8,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: fonts.bodyBold, fontSize: 12, color: colors.textPrimary }}>
+                        {opt.label}
+                        {chosen ? (locale === 'pt-BR' ? ' ✓' : ' ✓') : ''}
+                      </Text>
+                      <Text style={{ fontFamily: fonts.bodyRegular, fontSize: 11, color: colors.textMuted }}>
+                        {opt.warrantyDays}d · {formatCurrency(opt.totalPrice)}
+                      </Text>
+                    </View>
+                    {item.status === 'QUOTE_SENT' ? (
+                      <Pressable
+                        onPress={() =>
+                          transitionMutation.mutate({
+                            status: 'APPROVED',
+                            quoteOptionId: opt.id,
+                          })
+                        }
+                        style={{
+                          backgroundColor: colors.success,
+                          borderRadius: radius.md,
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text style={{ fontFamily: fonts.bodySemiBold, fontSize: 11, color: colors.textOnDark }}>
+                          {locale === 'pt-BR' ? 'Aprovar' : 'Approve'}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
 
           <View style={styles.priceRows}>
             <View style={styles.priceRow}>

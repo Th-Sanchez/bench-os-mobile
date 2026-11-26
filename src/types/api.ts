@@ -1,5 +1,7 @@
 export type Role = 'OWNER' | 'ATTENDANT' | 'TECHNICIAN';
 
+export type CommissionBasis = 'LABOR_ONLY' | 'TOTAL_PRICE' | 'NET_PROFIT';
+
 export type DevicePlatform = 'ANDROID' | 'IOS' | 'WEB';
 
 export type Voltage = 'V110' | 'V220' | 'BIVOLT' | 'BATTERY' | 'UNKNOWN';
@@ -18,6 +20,8 @@ export type ItemStatus =
   | 'CANCELLED';
 
 export type OrderPaymentMethod = 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH';
+
+export type PartRequestStatus = 'TO_ORDER' | 'ORDERED' | 'ARRIVED' | 'CANCELLED';
 
 export type PhotoStage = 'INTAKE' | 'DIAGNOSIS' | 'COMPLETED';
 
@@ -66,7 +70,14 @@ export interface UserResponse {
   email: string;
   role: Role;
   active: boolean;
+  commissionPercent?: number;
   createdAt: string;
+}
+
+export interface TechnicianOptionResponse {
+  id: string;
+  name: string;
+  role: Role;
 }
 
 export interface TenantResponse {
@@ -118,6 +129,7 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   role: Role;
+  commissionPercent?: number;
 }
 
 export interface ResetUserPasswordRequest {
@@ -158,6 +170,8 @@ export interface TenantSettingsResponse {
   businessHours: string | null;
   warrantyTerms: string | null;
   careTipsTemplates: Record<string, string[]>;
+  technicianAssignmentEnabled: boolean;
+  commissionBasis: CommissionBasis;
 }
 
 export interface UpdateShopBrandingRequest {
@@ -180,6 +194,8 @@ export interface UpdateTenantSettingsRequest {
   pixKey?: string;
   pixReceiverName?: string;
   pixReceiverCity?: string;
+  technicianAssignmentEnabled?: boolean;
+  commissionBasis?: CommissionBasis;
 }
 
 // Customer
@@ -267,6 +283,13 @@ export interface ServiceOrderItemResponse {
   parentOrderId: string | null;
   parentItemTag: string | null;
   warrantyReturn: boolean;
+  assignedTechnicianId?: string | null;
+  assignedTechnicianName?: string | null;
+  commissionPercent?: number | null;
+  commissionAmount?: number | null;
+  selectedQuoteOptionId?: string | null;
+  selectedQuoteOptionLabel?: string | null;
+  quoteOptions?: QuoteOptionResponse[];
   createdAt: string;
   updatedAt: string;
 }
@@ -309,14 +332,48 @@ export interface OrderItemQueueResponse {
   finishedAt: string | null;
   parentItemId: string | null;
   warrantyReturn: boolean;
+  assignedTechnicianId?: string | null;
+  assignedTechnicianName?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AssignTechnicianRequest {
+  technicianId: string | null;
+  commissionPercent?: number | null;
+  clearCommissionOverride?: boolean;
 }
 
 export interface CreateWarrantyReturnRequest {
   reportedIssue: string;
   accessories?: string;
   notes?: string;
+}
+
+export interface QuoteOptionRequest {
+  label: string;
+  description?: string;
+  laborCost: number;
+  partsCost: number;
+  partsCostActual?: number;
+  discount?: number;
+  warrantyDays?: number;
+  recommended?: boolean;
+}
+
+export interface QuoteOptionResponse {
+  id: string;
+  optionIndex: number;
+  label: string;
+  description: string | null;
+  laborCost: number;
+  partsCost: number;
+  partsCostActual: number;
+  discount: number;
+  totalPrice: number;
+  estimatedNetProfit: number;
+  warrantyDays: number;
+  recommended: boolean;
 }
 
 export interface UpdateItemQuoteRequest {
@@ -326,6 +383,7 @@ export interface UpdateItemQuoteRequest {
   partsCostActual?: number;
   discount: number;
   warrantyDays?: number;
+  quoteOptions?: QuoteOptionRequest[];
 }
 
 export interface PartCatalogResponse {
@@ -348,6 +406,78 @@ export interface UpsertPartCatalogRequest {
   notes?: string;
 }
 
+export interface PartRequestResponse {
+  id: string;
+  serviceOrderId: string;
+  serviceOrderItemId: string;
+  orderNumber: number;
+  itemIndex: number;
+  itemTag: string;
+  itemStatus: ItemStatus;
+  applianceDisplayName: string;
+  customerName: string | null;
+  partCatalogId: string | null;
+  partName: string;
+  quantity: number;
+  estimatedUnitCost: number;
+  estimatedTotalCost: number;
+  actualUnitCost: number | null;
+  effectiveTotalCost: number;
+  supplierName: string | null;
+  purchaseUrl: string | null;
+  notes: string | null;
+  status: PartRequestStatus;
+  expenseRecorded: boolean;
+  orderedAt: string | null;
+  arrivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartRequestSummaryResponse {
+  toOrderCount: number;
+  orderedCount: number;
+  arrivedCount: number;
+  estimatedToOrderCost: number;
+  estimatedOrderedCost: number;
+}
+
+export interface CreatePartRequestRequest {
+  partCatalogId?: string;
+  partName?: string;
+  quantity?: number;
+  estimatedUnitCost?: number;
+  supplierName?: string;
+  purchaseUrl?: string;
+  notes?: string;
+  moveItemToWaitingParts?: boolean;
+}
+
+export interface UpdatePartRequestRequest {
+  partName: string;
+  quantity?: number;
+  estimatedUnitCost?: number;
+  actualUnitCost?: number;
+  supplierName?: string;
+  purchaseUrl?: string;
+  notes?: string;
+}
+
+export interface MarkPartOrderedRequest {
+  supplierName?: string;
+  purchaseUrl?: string;
+  actualUnitCost?: number;
+  notes?: string;
+}
+
+export interface ArrivePartRequestRequest {
+  actualUnitCost?: number;
+  addToItemPartsCost?: boolean;
+  moveItemToInRepair?: boolean;
+  recordExpense?: boolean;
+  paymentMethod?: OrderPaymentMethod;
+}
+
 export interface RepairProfitabilityResponse {
   periodStart: string;
   periodEnd: string;
@@ -360,9 +490,41 @@ export interface RepairProfitabilityResponse {
   profitMarginPercent: number;
 }
 
+export interface WorkshopAnalyticsResponse {
+  periodStart: string;
+  periodEnd: string;
+  zone: string;
+  quotesSentCount: number;
+  quotesApprovedCount: number;
+  quotesRejectedCount: number;
+  quotesPendingCount: number;
+  quoteApprovalRatePercent: number | null;
+  avgIntakeToQuoteHours: number | null;
+  intakeToQuoteSampleSize: number;
+  avgApprovalToReadyHours: number | null;
+  approvalToReadySampleSize: number;
+  avgTotalTurnaroundHours: number | null;
+  deliveredItemsCount: number;
+  paidRepairsCount: number;
+  totalRevenue: number;
+  totalPartsCostActual: number;
+  netRepairProfit: number;
+  netProfitMarginPercent: number;
+  averageTicket: number;
+  itemsReceivedCount: number;
+  warrantyReturnsCount: number;
+  warrantyReturnRatePercent: number;
+  overdueActiveCount: number;
+  awaitingQuoteCount: number;
+  awaitingApprovalCount: number;
+  waitingPartsCount: number;
+  readyForPickupCount: number;
+}
+
 export interface TransitionItemStatusRequest {
   status: ItemStatus;
   cancellationReason?: string;
+  quoteOptionId?: string;
 }
 
 export interface PaymentPartRequest {

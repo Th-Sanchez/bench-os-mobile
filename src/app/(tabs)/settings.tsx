@@ -159,6 +159,7 @@ export default function SettingsScreen() {
   const [abandonmentDaysDraft, setAbandonmentDaysDraft] = useState<string | null>(null);
   const [googleReviewUrlDraft, setGoogleReviewUrlDraft] = useState<string | null>(null);
   const [deliverySignatureDraft, setDeliverySignatureDraft] = useState<boolean | null>(null);
+  const [technicianAssignmentDraft, setTechnicianAssignmentDraft] = useState<boolean | null>(null);
   const [pixKeyDraft, setPixKeyDraft] = useState<string | null>(null);
   const [pixReceiverNameDraft, setPixReceiverNameDraft] = useState<string | null>(null);
   const [pixReceiverCityDraft, setPixReceiverCityDraft] = useState<string | null>(null);
@@ -220,6 +221,8 @@ export default function SettingsScreen() {
     googleReviewUrlDraft ?? (settingsData?.googleReviewUrl ?? '');
   const deliverySignatureEnabled =
     deliverySignatureDraft ?? Boolean(settingsData?.deliverySignatureEnabled);
+  const technicianAssignmentEnabled =
+    technicianAssignmentDraft ?? Boolean(settingsData?.technicianAssignmentEnabled);
   const pixKeyInput = pixKeyDraft ?? (settingsData?.pixKey ?? '');
   const pixReceiverNameInput = pixReceiverNameDraft ?? (settingsData?.pixReceiverName ?? '');
   const pixReceiverCityInput = pixReceiverCityDraft ?? (settingsData?.pixReceiverCity ?? '');
@@ -269,6 +272,7 @@ export default function SettingsScreen() {
       setAbandonmentDaysDraft(null);
       setGoogleReviewUrlDraft(null);
       setDeliverySignatureDraft(null);
+      setTechnicianAssignmentDraft(null);
       setPixKeyDraft(null);
       setPixReceiverNameDraft(null);
       setPixReceiverCityDraft(null);
@@ -616,6 +620,7 @@ export default function SettingsScreen() {
       whatsappReadyTemplate: toApiTemplate(readyTemplate.trim()),
       googleReviewUrl: trimmedGoogleUrl,
       deliverySignatureEnabled,
+      technicianAssignmentEnabled,
       pixKey: trimmedPixKey,
       pixReceiverName: pixReceiverNameInput.trim(),
       pixReceiverCity: pixReceiverCityInput.trim(),
@@ -959,6 +964,33 @@ export default function SettingsScreen() {
                   value={deliverySignatureEnabled}
                   disabled={!isOwner}
                   onValueChange={(nextValue) => setDeliverySignatureDraft(nextValue)}
+                  trackColor={{
+                    false: colors.borderStrong,
+                    true: colors.brandPrimary,
+                  }}
+                  thumbColor={colors.bgSurface}
+                />
+              </View>
+              <View style={styles.logoutDivider} />
+
+              {/* Optional Technician Assignment & Commissions Toggle */}
+              <View style={styles.langRow}>
+                <View style={styles.langCopy}>
+                  <Text style={styles.langTitle}>
+                    {locale === 'pt-BR'
+                      ? 'Técnico responsável e comissões (opcional)'
+                      : 'Assigned technician & commissions (optional)'}
+                  </Text>
+                  <Text style={styles.langSubtitle}>
+                    {locale === 'pt-BR'
+                      ? 'Ative em oficinas com equipe para atribuir técnico por aparelho e fechar comissões no Financeiro Web.'
+                      : 'Enable for multi-tech shops to assign items and close monthly commissions in Web Finance.'}
+                  </Text>
+                </View>
+                <Switch
+                  value={technicianAssignmentEnabled}
+                  disabled={!isOwner}
+                  onValueChange={(nextValue) => setTechnicianAssignmentDraft(nextValue)}
                   trackColor={{
                     false: colors.borderStrong,
                     true: colors.brandPrimary,

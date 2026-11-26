@@ -1,9 +1,12 @@
 import { apiRequest } from './http';
 import type {
+  ArrivePartRequestRequest,
+  AssignTechnicianRequest,
   AuthResponse,
   BatchImportCustomersRequest,
   BatchImportCustomersResponse,
   CreateFinancialTransactionRequest,
+  CreatePartRequestRequest,
   CreateServiceOrderRequest,
   CreateUserRequest,
   CreateWarrantyReturnRequest,
@@ -17,10 +20,14 @@ import type {
   ItemPhotoResponse,
   ItemStatus,
   LoginRequest,
+  MarkPartOrderedRequest,
   MessageResponse,
   OrderItemQueueResponse,
   PageResponse,
   PartCatalogResponse,
+  PartRequestResponse,
+  PartRequestStatus,
+  PartRequestSummaryResponse,
   PresignPhotoUploadRequest,
   PresignPhotoUploadResponse,
   PublicOrderResponse,
@@ -33,6 +40,7 @@ import type {
   ServiceOrderItemResponse,
   ServiceOrderResponse,
   SupplierResponse,
+  TechnicianOptionResponse,
   TenantSettingsResponse,
   TransactionCategory,
   TransactionPaymentMethod,
@@ -40,6 +48,7 @@ import type {
   TransactionType,
   TransitionItemStatusRequest,
   UpdateItemQuoteRequest,
+  UpdatePartRequestRequest,
   UpdateShopBrandingRequest,
   UpdateTenantSettingsRequest,
   UpsertCustomerRequest,
@@ -48,6 +57,7 @@ import type {
   UserResponse,
   WhatsappLinkResponse,
   WhatsappMessageStage,
+  WorkshopAnalyticsResponse,
 } from '@/types/api';
 
 export const authApi = {
@@ -83,10 +93,16 @@ export const authApi = {
 export const usersApi = {
   me: () => apiRequest<UserResponse>('/api/v1/users/me'),
   list: () => apiRequest<UserResponse[]>('/api/v1/users'),
+  listTechnicians: () => apiRequest<TechnicianOptionResponse[]>('/api/v1/users/technicians'),
   create: (payload: CreateUserRequest) =>
     apiRequest<UserResponse>('/api/v1/users', { method: 'POST', body: payload }),
   updateStatus: (id: string, active: boolean) =>
     apiRequest<UserResponse>(`/api/v1/users/${id}/status`, { method: 'PATCH', body: { active } }),
+  updateCommission: (id: string, commissionPercent: number) =>
+    apiRequest<UserResponse>(`/api/v1/users/${id}/commission`, {
+      method: 'PATCH',
+      body: { commissionPercent },
+    }),
   resetPassword: (id: string, newPassword: string) =>
     apiRequest<UserResponse>(`/api/v1/users/${id}/password`, {
       method: 'PATCH',
@@ -180,6 +196,9 @@ export const ordersApi = {
   getProfitability: (params?: { from?: string; to?: string; zone?: string }) =>
     apiRequest<RepairProfitabilityResponse>('/api/v1/orders/profitability', { query: params }),
 
+  getAnalytics: (params?: { from?: string; to?: string; zone?: string }) =>
+    apiRequest<WorkshopAnalyticsResponse>('/api/v1/orders/analytics', { query: params }),
+
   listBenchQueue: (params?: {
     status?: ItemStatus[];
     tag?: string;
@@ -194,6 +213,12 @@ export const ordersApi = {
 
   updateQuote: (orderId: string, itemId: string, payload: UpdateItemQuoteRequest) =>
     apiRequest<ServiceOrderItemResponse>(`/api/v1/orders/${orderId}/items/${itemId}/quote`, {
+      method: 'PATCH',
+      body: payload,
+    }),
+
+  assignTechnician: (orderId: string, itemId: string, payload: AssignTechnicianRequest) =>
+    apiRequest<ServiceOrderItemResponse>(`/api/v1/orders/${orderId}/items/${itemId}/technician`, {
       method: 'PATCH',
       body: payload,
     }),
@@ -243,6 +268,53 @@ export const partsCatalogApi = {
 
   seedDefaults: () =>
     apiRequest<PartCatalogResponse[]>('/api/v1/parts-catalog/seed-defaults', { method: 'POST' }),
+};
+
+export const partRequestsApi = {
+  listForItem: (orderId: string, itemId: string) =>
+    apiRequest<PartRequestResponse[]>(`/api/v1/orders/${orderId}/items/${itemId}/part-requests`),
+
+  createForItem: (orderId: string, itemId: string, payload: CreatePartRequestRequest) =>
+    apiRequest<PartRequestResponse>(`/api/v1/orders/${orderId}/items/${itemId}/part-requests`, {
+      method: 'POST',
+      body: payload,
+    }),
+
+  listQueue: (params?: {
+    status?: PartRequestStatus[];
+    query?: string;
+    page?: number;
+    size?: number;
+  }) =>
+    apiRequest<PageResponse<PartRequestResponse>>('/api/v1/part-requests', { query: params }),
+
+  getSummary: () => apiRequest<PartRequestSummaryResponse>('/api/v1/part-requests/summary'),
+
+  update: (id: string, payload: UpdatePartRequestRequest) =>
+    apiRequest<PartRequestResponse>(`/api/v1/part-requests/${id}`, {
+      method: 'PUT',
+      body: payload,
+    }),
+
+  markOrdered: (id: string, payload?: MarkPartOrderedRequest) =>
+    apiRequest<PartRequestResponse>(`/api/v1/part-requests/${id}/order`, {
+      method: 'POST',
+      body: payload ?? {},
+    }),
+
+  reopen: (id: string) =>
+    apiRequest<PartRequestResponse>(`/api/v1/part-requests/${id}/reopen`, {
+      method: 'POST',
+    }),
+
+  markArrived: (id: string, payload?: ArrivePartRequestRequest) =>
+    apiRequest<PartRequestResponse>(`/api/v1/part-requests/${id}/arrive`, {
+      method: 'POST',
+      body: payload ?? {},
+    }),
+
+  remove: (id: string) =>
+    apiRequest<void>(`/api/v1/part-requests/${id}`, { method: 'DELETE' }),
 };
 
 export const photosApi = {

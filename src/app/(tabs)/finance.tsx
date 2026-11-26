@@ -195,6 +195,12 @@ export default function FinanceDashboardScreen() {
     enabled: isOwner,
   });
 
+  const analyticsQuery = useQuery({
+    queryKey: ['orders-analytics', from, to, deviceZone],
+    queryFn: () => ordersApi.getAnalytics({ from, to, zone: deviceZone }),
+    enabled: isOwner,
+  });
+
   const shiftMonth = (delta: number) => {
     const next = new Date(selectedYear, selectedMonth + delta, 1);
     setSelectedYear(next.getFullYear());
@@ -208,6 +214,7 @@ export default function FinanceDashboardScreen() {
       pendingPayablesQuery.refetch(),
       dailyClosingQuery.refetch(),
       profitabilityQuery.refetch(),
+      analyticsQuery.refetch(),
     ]);
   };
 
@@ -637,6 +644,107 @@ export default function FinanceDashboardScreen() {
                   </Text>
                   <Text style={[styles.todayMiniValue, { color: colors.dangerDark }]} numberOfLines={1}>
                     - {formatCurrency(profitability.totalPartsCostActual)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Actionable Workshop Indicators Card ('Indicadores da Oficina') */}
+          {analyticsQuery.data ? (
+            <View style={styles.todayCard}>
+              <View style={styles.todayHeaderRow}>
+                <View style={styles.todayTitleGroup}>
+                  <View style={[styles.todayIconBox, { backgroundColor: colors.infoSoft }]}>
+                    <Clock size={15} color={colors.brandPrimary} strokeWidth={2.2} />
+                  </View>
+                  <View>
+                    <Text style={styles.todayOverline}>
+                      {locale === 'pt-BR' ? 'INDICADORES DA OFICINA' : 'WORKSHOP INDICATORS'}
+                    </Text>
+                    <Text style={styles.todaySubmeta}>
+                      {locale === 'pt-BR'
+                        ? `Aprovação, SLA, ticket e garantia · ${monthLabel}`
+                        : `Approval, SLA, ticket & warranty · ${monthLabel}`}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.todayBreakdownRow}>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'Aprovação' : 'Approval'}
+                  </Text>
+                  <Text style={[styles.todayMiniValue, { color: colors.successDark }]} numberOfLines={1}>
+                    {analyticsQuery.data.quoteApprovalRatePercent != null
+                      ? `${Number(analyticsQuery.data.quoteApprovalRatePercent).toFixed(0)}%`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'Ticket médio' : 'Avg. ticket'}
+                  </Text>
+                  <Text style={styles.todayMiniValue} numberOfLines={1}>
+                    {formatCurrency(analyticsQuery.data.averageTicket)}
+                  </Text>
+                </View>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'Garantia' : 'Warranty'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.todayMiniValue,
+                      analyticsQuery.data.warrantyReturnRatePercent > 10 && {
+                        color: colors.dangerDark,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {Number(analyticsQuery.data.warrantyReturnRatePercent).toFixed(1)}%
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.todayBreakdownRow}>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'SLA Orçamento' : 'SLA Quote'}
+                  </Text>
+                  <Text style={styles.todayMiniValue} numberOfLines={1}>
+                    {analyticsQuery.data.avgIntakeToQuoteHours != null
+                      ? analyticsQuery.data.avgIntakeToQuoteHours < 24
+                        ? `${Number(analyticsQuery.data.avgIntakeToQuoteHours).toFixed(1)}h`
+                        : `${(analyticsQuery.data.avgIntakeToQuoteHours / 24).toFixed(1)}d`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'SLA Reparo' : 'SLA Repair'}
+                  </Text>
+                  <Text style={styles.todayMiniValue} numberOfLines={1}>
+                    {analyticsQuery.data.avgApprovalToReadyHours != null
+                      ? analyticsQuery.data.avgApprovalToReadyHours < 24
+                        ? `${Number(analyticsQuery.data.avgApprovalToReadyHours).toFixed(1)}h`
+                        : `${(analyticsQuery.data.avgApprovalToReadyHours / 24).toFixed(1)}d`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.todayMiniPill}>
+                  <Text style={styles.todayMiniLabel}>
+                    {locale === 'pt-BR' ? 'Em atraso' : 'Overdue'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.todayMiniValue,
+                      analyticsQuery.data.overdueActiveCount > 0 && { color: colors.dangerDark },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {analyticsQuery.data.overdueActiveCount}
                   </Text>
                 </View>
               </View>

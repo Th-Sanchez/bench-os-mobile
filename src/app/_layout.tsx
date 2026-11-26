@@ -84,6 +84,7 @@ function RootNavigator() {
       <Stack.Screen name="customers/[customerId]" />
       <Stack.Screen name="orders/new" options={{ presentation: 'modal' }} />
       <Stack.Screen name="orders/stale" />
+      <Stack.Screen name="orders/part-requests" />
       <Stack.Screen name="orders/[orderId]/items/[itemId]/index" />
       <Stack.Screen
         name="orders/[orderId]/items/[itemId]/deliver"
