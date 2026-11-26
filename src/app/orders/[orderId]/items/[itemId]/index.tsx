@@ -42,6 +42,7 @@ import {
 import { financeApi, ordersApi, photosApi } from '@/api/endpoints';
 import { API_BASE_URL, ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
+import { ItemPartRequestsSection } from '@/components/orders/ItemPartRequestsSection';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
 import { SignaturePreview } from '@/components/orders/SignaturePad';
 import { WarrantyReturnModal } from '@/components/orders/WarrantyReturnModal';
@@ -828,6 +829,9 @@ export default function ApplianceDetailScreen() {
             </>
           ) : null}
         </Card>
+
+        {/* Required Parts Section */}
+        <ItemPartRequestsSection orderId={orderId} item={item} />
 
         {/* Photos Card */}
         <Card style={styles.photosCard}>

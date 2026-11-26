@@ -11,10 +11,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Archive, Bell, ChevronRight, Plus, QrCode, Search, User, Wrench, X } from 'lucide-react-native';
-import { ordersApi } from '@/api/endpoints';
+import { Archive, Bell, ChevronRight, Plus, QrCode, Search, ShoppingCart, User, Wrench, X } from 'lucide-react-native';
+import { ordersApi, partRequestsApi } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { QrScannerModal } from '@/components/workbench/QrScannerModal';
 import { getWaitingDays } from '@/utils/staleItems';
@@ -98,6 +98,15 @@ export default function WorkbenchScreen() {
     queryKey: ['abandonment-eligible-summary'],
     queryFn: () => ordersApi.listAbandonmentEligible({ page: 0, size: 1 }),
   });
+
+  const partRequestsSummaryQuery = useQuery({
+    queryKey: ['part-requests-summary'],
+    queryFn: () => partRequestsApi.getSummary(),
+  });
+
+  const pendingPartsCount =
+    (partRequestsSummaryQuery.data?.toOrderCount ?? 0) +
+    (partRequestsSummaryQuery.data?.orderedCount ?? 0);
 
   const allItems = useMemo(
     () => queueQuery.data?.content ?? [],
@@ -232,6 +241,24 @@ export default function WorkbenchScreen() {
             </Pressable>
           ) : null}
           <Pressable
+            onPress={() => router.push('/orders/part-requests' as Href)}
+            style={styles.iconBtn}
+            accessibilityLabel={locale === 'pt-BR' ? 'Fila de compras de peças' : 'Parts shopping queue'}
+          >
+            <ShoppingCart
+              size={20}
+              color={pendingPartsCount > 0 ? colors.warning : colors.textPrimary}
+              strokeWidth={2}
+            />
+            {pendingPartsCount > 0 ? (
+              <View style={[styles.iconBadge, styles.iconBadgeWarn]}>
+                <Text style={styles.iconBadgeText}>
+                  {pendingPartsCount > 99 ? '99+' : pendingPartsCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable
             onPress={() => router.push('/orders/stale')}
             style={styles.iconBtn}
             accessibilityLabel={locale === 'pt-BR' ? 'Parados e descarte' : 'Stale and discard'}
@@ -285,6 +312,7 @@ export default function WorkbenchScreen() {
             onRefresh={() => {
               void queueQuery.refetch();
               void abandonmentSummaryQuery.refetch();
+              void partRequestsSummaryQuery.refetch();
             }}
             tintColor={colors.brandPrimary}
           />
