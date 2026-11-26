@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -100,7 +100,17 @@ interface PartRequestFormModalProps {
   editing?: PartRequestResponse | null;
 }
 
-export function PartRequestFormMobileModal({
+export function PartRequestFormMobileModal(props: PartRequestFormModalProps) {
+  return (
+    <Modal visible={props.visible} animationType="slide" transparent onRequestClose={props.onClose}>
+      {props.visible ? (
+        <PartRequestFormMobileModalContent key={props.editing?.id ?? 'new'} {...props} />
+      ) : null}
+    </Modal>
+  );
+}
+
+function PartRequestFormMobileModalContent({
   visible,
   onClose,
   orderId,
@@ -112,15 +122,23 @@ export function PartRequestFormMobileModal({
   const { locale, t, formatCurrency } = useI18n();
   const queryClient = useQueryClient();
 
-  const [partCatalogId, setPartCatalogId] = useState<string | null>(null);
-  const [partName, setPartName] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [estimatedCostInput, setEstimatedCostInput] = useState('');
-  const [actualCostInput, setActualCostInput] = useState('');
-  const [supplierName, setSupplierName] = useState('');
-  const [purchaseUrl, setPurchaseUrl] = useState('');
-  const [notes, setNotes] = useState('');
-  const [moveToWaitingParts, setMoveToWaitingParts] = useState(true);
+  const [partCatalogId, setPartCatalogId] = useState<string | null>(
+    () => editing?.partCatalogId ?? null
+  );
+  const [partName, setPartName] = useState(() => editing?.partName ?? '');
+  const [quantity, setQuantity] = useState(() => (editing ? String(editing.quantity) : '1'));
+  const [estimatedCostInput, setEstimatedCostInput] = useState(() =>
+    editing ? formatCurrencyInput(editing.estimatedUnitCost) : ''
+  );
+  const [actualCostInput, setActualCostInput] = useState(() =>
+    editing?.actualUnitCost != null ? formatCurrencyInput(editing.actualUnitCost) : ''
+  );
+  const [supplierName, setSupplierName] = useState(() => editing?.supplierName ?? '');
+  const [purchaseUrl, setPurchaseUrl] = useState(() => editing?.purchaseUrl ?? '');
+  const [notes, setNotes] = useState(() => editing?.notes ?? '');
+  const [moveToWaitingParts, setMoveToWaitingParts] = useState(
+    () => !editing && (itemStatus === 'APPROVED' || itemStatus === 'IN_REPAIR')
+  );
 
   const canMoveToWaiting =
     !editing && (itemStatus === 'APPROVED' || itemStatus === 'IN_REPAIR');
@@ -130,33 +148,6 @@ export function PartRequestFormMobileModal({
     queryFn: () => partsCatalogApi.list(),
     enabled: visible && !editing,
   });
-
-  useEffect(() => {
-    if (!visible) return;
-    if (editing) {
-      setPartCatalogId(editing.partCatalogId);
-      setPartName(editing.partName);
-      setQuantity(String(editing.quantity));
-      setEstimatedCostInput(formatCurrencyInput(editing.estimatedUnitCost));
-      setActualCostInput(
-        editing.actualUnitCost != null ? formatCurrencyInput(editing.actualUnitCost) : ''
-      );
-      setSupplierName(editing.supplierName ?? '');
-      setPurchaseUrl(editing.purchaseUrl ?? '');
-      setNotes(editing.notes ?? '');
-      setMoveToWaitingParts(false);
-    } else {
-      setPartCatalogId(null);
-      setPartName('');
-      setQuantity('1');
-      setEstimatedCostInput('');
-      setActualCostInput('');
-      setSupplierName('');
-      setPurchaseUrl('');
-      setNotes('');
-      setMoveToWaitingParts(itemStatus === 'APPROVED' || itemStatus === 'IN_REPAIR');
-    }
-  }, [visible, editing, itemStatus]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -219,7 +210,6 @@ export function PartRequestFormMobileModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.modalBackdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -422,7 +412,6 @@ export function PartRequestFormMobileModal({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
   );
 }
 
@@ -432,30 +421,42 @@ interface ArrivePartModalProps {
 }
 
 export function ArrivePartRequestMobileModal({ request, onClose }: ArrivePartModalProps) {
+  return (
+    <Modal visible={Boolean(request)} animationType="slide" transparent onRequestClose={onClose}>
+      {request ? (
+        <ArrivePartRequestMobileModalContent key={request.id} request={request} onClose={onClose} />
+      ) : null}
+    </Modal>
+  );
+}
+
+function ArrivePartRequestMobileModalContent({
+  request,
+  onClose,
+}: {
+  request: PartRequestResponse;
+  onClose: () => void;
+}) {
   const { locale, t, formatCurrency } = useI18n();
   const { session } = useAuth();
   const queryClient = useQueryClient();
   const isOwner = session?.user.role === 'OWNER';
 
-  const [actualUnitCostInput, setActualUnitCostInput] = useState('');
+  const baseUnit = request.actualUnitCost ?? request.estimatedUnitCost;
+  const [actualUnitCostInput, setActualUnitCostInput] = useState(() =>
+    formatCurrencyInput(baseUnit)
+  );
   const [addToItemPartsCost, setAddToItemPartsCost] = useState(true);
-  const [moveItemToInRepair, setMoveItemToInRepair] = useState(true);
-  const [recordExpense, setRecordExpense] = useState(false);
+  const [moveItemToInRepair, setMoveItemToInRepair] = useState(
+    () => request.itemStatus === 'WAITING_PARTS'
+  );
+  const [recordExpense, setRecordExpense] = useState(
+    () => isOwner && baseUnit * request.quantity > 0
+  );
   const [paymentMethod, setPaymentMethod] = useState<OrderPaymentMethod>('PIX');
-
-  useEffect(() => {
-    if (!request) return;
-    const baseUnit = request.actualUnitCost ?? request.estimatedUnitCost;
-    setActualUnitCostInput(formatCurrencyInput(baseUnit));
-    setAddToItemPartsCost(true);
-    setMoveItemToInRepair(request.itemStatus === 'WAITING_PARTS');
-    setRecordExpense(isOwner && baseUnit * request.quantity > 0);
-    setPaymentMethod('PIX');
-  }, [request, isOwner]);
 
   const arriveMutation = useMutation({
     mutationFn: () => {
-      if (!request) throw new Error('Missing request');
       const unitCost = parseCurrencyBRL(actualUnitCostInput);
       const total = unitCost * request.quantity;
       return partRequestsApi.markArrived(request.id, {
@@ -488,10 +489,9 @@ export function ArrivePartRequestMobileModal({ request, onClose }: ArrivePartMod
   });
 
   const unitCostNum = parseCurrencyBRL(actualUnitCostInput);
-  const totalCostNum = request ? unitCostNum * request.quantity : 0;
+  const totalCostNum = unitCostNum * request.quantity;
 
   return (
-    <Modal visible={Boolean(request)} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.modalBackdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -644,7 +644,6 @@ export function ArrivePartRequestMobileModal({ request, onClose }: ArrivePartMod
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
   );
 }
 
