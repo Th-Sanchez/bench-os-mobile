@@ -150,6 +150,9 @@ export interface TenantSettingsResponse {
   googleReviewUrl: string | null;
   deliverySignatureEnabled: boolean;
   intakeChecklistTemplates: Record<string, string[]>;
+  pixKey: string | null;
+  pixReceiverName: string | null;
+  pixReceiverCity: string | null;
 }
 
 export interface UpdateTenantSettingsRequest {
@@ -161,6 +164,9 @@ export interface UpdateTenantSettingsRequest {
   whatsappReadyTemplate?: string;
   googleReviewUrl?: string;
   deliverySignatureEnabled?: boolean;
+  pixKey?: string;
+  pixReceiverName?: string;
+  pixReceiverCity?: string;
 }
 
 // Customer
@@ -426,6 +432,9 @@ export interface PublicOrderResponse {
   shopName: string;
   shopPhone: string | null;
   googleReviewUrl: string | null;
+  pixAmount?: number | null;
+  pixPayload?: string | null;
+  pixQrSvg?: string | null;
   orderNumber: number;
   createdAt: string;
   customerRating: number | null;

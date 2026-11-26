@@ -153,6 +153,9 @@ export default function SettingsScreen() {
   const [abandonmentDaysDraft, setAbandonmentDaysDraft] = useState<string | null>(null);
   const [googleReviewUrlDraft, setGoogleReviewUrlDraft] = useState<string | null>(null);
   const [deliverySignatureDraft, setDeliverySignatureDraft] = useState<boolean | null>(null);
+  const [pixKeyDraft, setPixKeyDraft] = useState<string | null>(null);
+  const [pixReceiverNameDraft, setPixReceiverNameDraft] = useState<string | null>(null);
+  const [pixReceiverCityDraft, setPixReceiverCityDraft] = useState<string | null>(null);
 
   const [activeTemplateStage, setActiveTemplateStage] = useState<WhatsappMessageStage>('INTAKE');
   const [intakeDraft, setIntakeDraft] = useState<string | null>(null);
@@ -201,6 +204,9 @@ export default function SettingsScreen() {
     googleReviewUrlDraft ?? (settingsData?.googleReviewUrl ?? '');
   const deliverySignatureEnabled =
     deliverySignatureDraft ?? Boolean(settingsData?.deliverySignatureEnabled);
+  const pixKeyInput = pixKeyDraft ?? (settingsData?.pixKey ?? '');
+  const pixReceiverNameInput = pixReceiverNameDraft ?? (settingsData?.pixReceiverName ?? '');
+  const pixReceiverCityInput = pixReceiverCityDraft ?? (settingsData?.pixReceiverCity ?? '');
 
   const intakeTemplate =
     intakeDraft ??
@@ -243,6 +249,9 @@ export default function SettingsScreen() {
       setAbandonmentDaysDraft(null);
       setGoogleReviewUrlDraft(null);
       setDeliverySignatureDraft(null);
+      setPixKeyDraft(null);
+      setPixReceiverNameDraft(null);
+      setPixReceiverCityDraft(null);
       setIntakeDraft(null);
       setQuoteDraft(null);
       setReadyDraft(null);
@@ -424,6 +433,18 @@ export default function SettingsScreen() {
       return;
     }
 
+    const trimmedPixKey = pixKeyInput.trim();
+    if (trimmedPixKey && /\s/.test(trimmedPixKey)) {
+      setSaveFeedback({
+        type: 'error',
+        text:
+          locale === 'pt-BR'
+            ? 'A chave Pix não pode conter espaços.'
+            : 'Pix key must not contain spaces.',
+      });
+      return;
+    }
+
     updateSettingsMutation.mutate({
       defaultLaborCost: Number(labor.toFixed(2)),
       defaultEstimatedDays: estDays,
@@ -433,6 +454,9 @@ export default function SettingsScreen() {
       whatsappReadyTemplate: toApiTemplate(readyTemplate.trim()),
       googleReviewUrl: trimmedGoogleUrl,
       deliverySignatureEnabled,
+      pixKey: trimmedPixKey,
+      pixReceiverName: pixReceiverNameInput.trim(),
+      pixReceiverCity: pixReceiverCityInput.trim(),
     });
   };
 
@@ -683,6 +707,70 @@ export default function SettingsScreen() {
                     {locale === 'pt-BR'
                       ? 'Clientes que avaliarem com 5★ no link /track verão um botão direto para avaliar sua oficina no Google.'
                       : 'Customers who rate 5★ on /track see a direct button to review your shop on Google.'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Pix Static QR Code Settings */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  {locale === 'pt-BR'
+                    ? 'Chave Pix da oficina (opcional)'
+                    : 'Workshop Pix Key (optional)'}
+                </Text>
+                <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                  <TextInput
+                    value={pixKeyInput}
+                    onChangeText={setPixKeyDraft}
+                    placeholder="CNPJ/CPF, e-mail, aleatória ou +55..."
+                    placeholderTextColor={colors.textMuted}
+                    editable={isOwner}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={77}
+                    style={[styles.monoInput, { fontSize: 13 }]}
+                  />
+                </View>
+                <View style={styles.twoColRow}>
+                  <View style={styles.colField}>
+                    <Text style={styles.fieldLabel}>
+                      {locale === 'pt-BR' ? 'Titular Pix (opcional)' : 'Pix Receiver'}
+                    </Text>
+                    <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                      <TextInput
+                        value={pixReceiverNameInput}
+                        onChangeText={setPixReceiverNameDraft}
+                        placeholder={session?.tenant.name ?? 'Oficina'}
+                        placeholderTextColor={colors.textMuted}
+                        editable={isOwner}
+                        maxLength={60}
+                        style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.colField}>
+                    <Text style={styles.fieldLabel}>
+                      {locale === 'pt-BR' ? 'Cidade Pix (opcional)' : 'Pix City'}
+                    </Text>
+                    <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                      <TextInput
+                        value={pixReceiverCityInput}
+                        onChangeText={setPixReceiverCityDraft}
+                        placeholder="Sao Paulo"
+                        placeholderTextColor={colors.textMuted}
+                        editable={isOwner}
+                        maxLength={60}
+                        style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                      />
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.infoHintRow}>
+                  <Info size={13} color={colors.textMuted} />
+                  <Text style={styles.infoHintText}>
+                    {locale === 'pt-BR'
+                      ? 'Gera QR Code e Copia e Cola com valor exato no /track e na tela de entrega. Deixe em branco para desativar.'
+                      : 'Generates exact-amount Pix QR & Copy-Paste on /track and delivery screen. Leave blank to disable.'}
                   </Text>
                 </View>
               </View>

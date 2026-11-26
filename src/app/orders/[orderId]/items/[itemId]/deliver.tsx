@@ -20,6 +20,7 @@ import {
   MessageCircle,
   PenTool,
   Plus,
+  QrCode,
   ShieldCheck,
   Trash2,
   User,
@@ -28,6 +29,7 @@ import {
 import { ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
+import { PixQrCodeBox } from '@/components/orders/PixQrCodeBox';
 import { SignaturePad, SignaturePreview } from '@/components/orders/SignaturePad';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -37,6 +39,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { OrderPaymentMethod, ServiceOrderItemResponse } from '@/types/api';
 import { formatCurrencyInput, maskCurrencyBRL, parseCurrencyBRL } from '@/utils/masks';
+import { buildPixBrCode } from '@/utils/pixBrCode';
 import {
   computeWarrantyInfo,
   formatFullDate,
@@ -88,6 +91,7 @@ export default function DeliverItemScreen() {
   );
 
   const [customParts, setCustomParts] = useState<PaymentDraft[] | null>(null);
+  const [showPixQr, setShowPixQr] = useState(false);
   const [signatureSvg, setSignatureSvg] = useState<string | null>(null);
   const [signerNameDraft, setSignerNameDraft] = useState<string | null>(null);
   const [isDrawingSignature, setIsDrawingSignature] = useState(false);
@@ -117,6 +121,33 @@ export default function DeliverItemScreen() {
   const remaining = Math.round((expectedTotal - enteredSum) * 100) / 100;
   const allPartsPositive = parts.every((p) => parseCurrencyBRL(p.amountText) > 0);
   const isBalanced = isFreeReturn || (parts.length > 0 && allPartsPositive && Math.abs(remaining) < 0.005);
+
+  const configuredPixKey = settingsQuery.data?.pixKey?.trim() ?? '';
+  const pixEnteredAmount = useMemo(() => {
+    const sum = parts
+      .filter((p) => p.paymentMethod === 'PIX')
+      .reduce((acc, p) => acc + parseCurrencyBRL(p.amountText), 0);
+    return Math.round(sum * 100) / 100;
+  }, [parts]);
+
+  const pixPayload = useMemo(() => {
+    if (isFreeReturn || !configuredPixKey || pixEnteredAmount <= 0 || !order) return null;
+    return buildPixBrCode({
+      pixKey: configuredPixKey,
+      merchantName: settingsQuery.data?.pixReceiverName || session?.tenant.name || 'OFICINA',
+      merchantCity: settingsQuery.data?.pixReceiverCity || 'BRASIL',
+      amount: pixEnteredAmount,
+      txid: `OS${order.orderNumber}`,
+    });
+  }, [
+    isFreeReturn,
+    configuredPixKey,
+    pixEnteredAmount,
+    order,
+    settingsQuery.data?.pixReceiverName,
+    settingsQuery.data?.pixReceiverCity,
+    session?.tenant.name,
+  ]);
 
   const deliverMutation = useMutation({
     mutationFn: async () => {
@@ -636,6 +667,33 @@ export default function DeliverItemScreen() {
                   </View>
                 </View>
               </View>
+
+              {/* Direct Pix QR Code (when workshop Pix key is configured and PIX is selected) */}
+              {pixPayload ? (
+                <View style={{ gap: 8 }}>
+                  <Button
+                    label={
+                      showPixQr
+                        ? locale === 'pt-BR'
+                          ? 'Ocultar QR Code Pix'
+                          : 'Hide Pix QR Code'
+                        : locale === 'pt-BR'
+                          ? `Mostrar QR Code Pix · ${formatCurrency(pixEnteredAmount)}`
+                          : `Show Pix QR Code · ${formatCurrency(pixEnteredAmount)}`
+                    }
+                    variant="secondary"
+                    icon={<QrCode size={16} color="#0F766E" />}
+                    onPress={() => setShowPixQr((prev) => !prev)}
+                  />
+                  {showPixQr ? (
+                    <PixQrCodeBox
+                      payload={pixPayload}
+                      formattedAmount={formatCurrency(pixEnteredAmount)}
+                      locale={locale}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
             </>
           )}
           {/* Digital Pickup Signature Card (controlled by shop settings) */}
