@@ -18,6 +18,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
   Camera,
+  Check,
   ClipboardCheck,
   Pencil,
   PlusCircle,
@@ -39,7 +40,10 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { usePrintPreferences } from '@/settings/PrintPreferencesContext';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { CustomerResponse, Voltage } from '@/types/api';
-import { DEFAULT_APPLIANCE_TYPES } from '@/constants/appliances';
+import {
+  DEFAULT_APPLIANCE_TYPES,
+  resolveChecklistForCategory,
+} from '@/constants/appliances';
 import { compressAndUploadItemPhoto } from '@/utils/imageUpload';
 import { shareOrderLabelsPdf } from '@/utils/labelPrintPdf';
 
@@ -56,6 +60,7 @@ interface DraftApplianceItem {
   accessories: string;
   serialNumber: string;
   intakePhotoUris: string[];
+  checkedLabels: string[];
 }
 
 function createEmptyItem(): DraftApplianceItem {
@@ -70,6 +75,7 @@ function createEmptyItem(): DraftApplianceItem {
     accessories: '',
     serialNumber: '',
     intakePhotoUris: [],
+    checkedLabels: [],
   };
 }
 
@@ -164,6 +170,17 @@ export default function NewOrderScreen() {
       const payloadItems = items.map((item) => {
         const resolvedType =
           item.applianceType === 'Outro' ? item.customType.trim() : item.applianceType.trim();
+        const categoryChecklist = resolveChecklistForCategory(
+          settingsQuery.data?.intakeChecklistTemplates,
+          resolvedType
+        );
+        const intakeChecklist =
+          categoryChecklist.length > 0 && item.checkedLabels.length > 0
+            ? categoryChecklist.map((label) => ({
+                label,
+                checked: item.checkedLabels.includes(label),
+              }))
+            : undefined;
         return {
           applianceType: resolvedType,
           brand: item.brand.trim(),
@@ -172,6 +189,7 @@ export default function NewOrderScreen() {
           serialNumber: item.serialNumber.trim() || undefined,
           accessories: item.accessories.trim() || undefined,
           reportedIssue: item.reportedIssue.trim(),
+          intakeChecklist,
         };
       });
 
@@ -647,7 +665,9 @@ export default function NewOrderScreen() {
                       return (
                         <Pressable
                           key={typeOption}
-                          onPress={() => updateItem(index, { applianceType: typeOption })}
+                          onPress={() =>
+                            updateItem(index, { applianceType: typeOption, checkedLabels: [] })
+                          }
                           style={[styles.typeChip, active && styles.typeChipActive]}
                         >
                           <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
@@ -761,6 +781,73 @@ export default function NewOrderScreen() {
                     style={styles.filledInput}
                   />
                 </View>
+
+                {/* Quick Intake Checklist */}
+                {(() => {
+                  const categoryChecklist = resolveChecklistForCategory(
+                    settingsQuery.data?.intakeChecklistTemplates,
+                    resolvedType
+                  );
+                  if (categoryChecklist.length === 0) return null;
+                  return (
+                    <View style={styles.checklistBox}>
+                      <View style={styles.labelRowBetween}>
+                        <View style={styles.checklistTitleRow}>
+                          <ClipboardCheck size={14} color={colors.brandPrimary} />
+                          <Text style={styles.checklistTitle}>
+                            {locale === 'pt-BR'
+                              ? 'Checklist de recebimento (opcional)'
+                              : 'Intake checklist (optional)'}
+                          </Text>
+                        </View>
+                        {item.checkedLabels.length > 0 ? (
+                          <Text style={styles.checklistCounter}>
+                            {item.checkedLabels.length}/{categoryChecklist.length}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.checklistItemsWrap}>
+                        {categoryChecklist.map((label) => {
+                          const checked = item.checkedLabels.includes(label);
+                          return (
+                            <Pressable
+                              key={label}
+                              onPress={() => {
+                                const next = checked
+                                  ? item.checkedLabels.filter((x) => x !== label)
+                                  : [...item.checkedLabels, label];
+                                updateItem(index, { checkedLabels: next });
+                              }}
+                              style={[
+                                styles.checklistPill,
+                                checked && styles.checklistPillChecked,
+                              ]}
+                            >
+                              <View
+                                style={[
+                                  styles.checklistCheckbox,
+                                  checked && styles.checklistCheckboxChecked,
+                                ]}
+                              >
+                                {checked ? (
+                                  <Check size={10} color={colors.textOnDark} strokeWidth={3} />
+                                ) : null}
+                              </View>
+                              <Text
+                                style={[
+                                  styles.checklistPillText,
+                                  checked && styles.checklistPillTextChecked,
+                                ]}
+                              >
+                                {label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })()}
 
                 {/* Intake Photos Strip */}
                 <View style={styles.fieldGroup}>
@@ -1263,5 +1350,71 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSurface,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
+  },
+  checklistBox: {
+    backgroundColor: colors.bgCanvas,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    padding: 10,
+    gap: 8,
+  },
+  checklistTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  checklistTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.textPrimary,
+  },
+  checklistCounter: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    color: colors.successDark,
+  },
+  checklistItemsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  checklistPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.bgSurface,
+  },
+  checklistPillChecked: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.successBorder,
+  },
+  checklistCheckbox: {
+    width: 15,
+    height: 15,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checklistCheckboxChecked: {
+    backgroundColor: colors.successDark,
+    borderColor: colors.successDark,
+  },
+  checklistPillText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  checklistPillTextChecked: {
+    fontFamily: fonts.bodySemiBold,
+    color: colors.successDark,
   },
 });

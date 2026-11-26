@@ -29,9 +29,11 @@ import {
   MessageCircle,
   MoreVertical,
   Pencil,
+  PenTool,
   Printer,
   RotateCcw,
   ShieldCheck,
+  Star,
   Trash2,
   TrendingUp,
   User,
@@ -41,6 +43,7 @@ import { financeApi, ordersApi, photosApi } from '@/api/endpoints';
 import { API_BASE_URL, ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { QuoteEditModal } from '@/components/orders/QuoteEditModal';
+import { SignaturePreview } from '@/components/orders/SignaturePad';
 import { WarrantyReturnModal } from '@/components/orders/WarrantyReturnModal';
 import {
   inferWhatsappStageFromStatuses,
@@ -761,6 +764,34 @@ export default function ApplianceDetailScreen() {
                 {item.accessories}
               </Text>
             ) : null}
+            {item.intakeChecklist && item.intakeChecklist.length > 0 ? (
+              <View style={styles.checklistDetailBox}>
+                <Text style={styles.checklistDetailTitle}>
+                  {locale === 'pt-BR' ? 'CHECKLIST DE RECEBIMENTO' : 'INTAKE CHECKLIST'}
+                </Text>
+                <View style={styles.checklistDetailWrap}>
+                  {item.intakeChecklist.map((entry) => (
+                    <View
+                      key={entry.label}
+                      style={[
+                        styles.checklistDetailPill,
+                        entry.checked && styles.checklistDetailPillChecked,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.checklistDetailText,
+                          entry.checked && styles.checklistDetailTextChecked,
+                        ]}
+                      >
+                        {entry.checked ? '✓ ' : '✕ '}
+                        {entry.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.divider} />
@@ -1161,6 +1192,27 @@ export default function ApplianceDetailScreen() {
                 </>
               ) : null}
 
+              {item.deliverySignatureSvg ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={{ gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <PenTool size={12} color={colors.brandPrimary} />
+                      <Text style={styles.sectionOverline}>
+                        {locale === 'pt-BR' ? 'ASSINATURA NA RETIRADA' : 'PICKUP SIGNATURE'}
+                      </Text>
+                    </View>
+                    <SignaturePreview svg={item.deliverySignatureSvg} height={74} />
+                    {item.deliverySignerName ? (
+                      <Text style={styles.priceLabel}>
+                        {locale === 'pt-BR' ? 'Retirado por: ' : 'Picked up by: '}
+                        {item.deliverySignerName}
+                      </Text>
+                    ) : null}
+                  </View>
+                </>
+              ) : null}
+
               <View style={styles.divider} />
               <View style={styles.warrantyActionGroup}>
                 <Button
@@ -1188,6 +1240,39 @@ export default function ApplianceDetailScreen() {
             </Card>
           );
         })() : null}
+
+        {/* Customer Rating Card (if rated on /track) */}
+        {order.customerRating != null ? (
+          <Card accentBorderColor={colors.warningBorder} style={styles.warrantyCard}>
+            <View style={styles.sectionHeaderBetween}>
+              <View style={styles.warrantyCardHeaderLeft}>
+                <Star size={16} color="#F59E0B" fill="#F59E0B" />
+                <Text style={styles.cardSectionTitle}>
+                  {locale === 'pt-BR' ? 'Avaliação do Cliente' : 'Customer Rating'}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star
+                    key={n}
+                    size={15}
+                    color={n <= (order.customerRating ?? 0) ? '#F59E0B' : colors.borderStrong}
+                    fill={n <= (order.customerRating ?? 0) ? '#F59E0B' : 'transparent'}
+                  />
+                ))}
+              </View>
+            </View>
+            {order.customerFeedback ? (
+              <Text style={styles.diagText}>&ldquo;{order.customerFeedback}&rdquo;</Text>
+            ) : (
+              <Text style={styles.mutedText}>
+                {locale === 'pt-BR'
+                  ? `Nota ${order.customerRating}/5 registrada pelo cliente na página de acompanhamento.`
+                  : `Customer submitted ${order.customerRating}/5 stars on the tracking page.`}
+              </Text>
+            )}
+          </Card>
+        ) : null}
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
@@ -1880,5 +1965,41 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 12.5,
     color: colors.warningDark,
+  },
+  checklistDetailBox: {
+    marginTop: 8,
+    gap: 6,
+  },
+  checklistDetailTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10.5,
+    letterSpacing: 0.5,
+    color: colors.textMuted,
+  },
+  checklistDetailWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  checklistDetailPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.bgCanvas,
+  },
+  checklistDetailPillChecked: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.successBorder,
+  },
+  checklistDetailText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11.5,
+    color: colors.textMuted,
+  },
+  checklistDetailTextChecked: {
+    fontFamily: fonts.bodySemiBold,
+    color: colors.successDark,
   },
 });

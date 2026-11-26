@@ -221,6 +221,13 @@ function consolidatePayments(parts: ReceiptPaymentPart[]): ReceiptPaymentPart[] 
   }));
 }
 
+function toSignatureDataUri(svg: string | null | undefined): string {
+  if (!svg) return '';
+  const trimmed = svg.trim();
+  if (!trimmed.startsWith('<svg')) return '';
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(trimmed)}`;
+}
+
 export function buildOrderWarrantyReceiptHtml({
   tenant,
   order,
@@ -482,6 +489,18 @@ export function buildOrderWarrantyReceiptHtml({
         </p>
       </section>
     `;
+
+  const signedEntry = [...warrantyEntries]
+    .filter((entry) => Boolean(toSignatureDataUri(entry.item.deliverySignatureSvg)))
+    .sort((a, b) => b.warranty.deliveredDate.getTime() - a.warranty.deliveredDate.getTime())[0];
+  const customerSignatureDataUri = signedEntry
+    ? toSignatureDataUri(signedEntry.item.deliverySignatureSvg)
+    : '';
+  const customerSignerDisplayName =
+    signedEntry?.item.deliverySignerName ||
+    sortedDelivered.find((i) => i.deliverySignerName)?.deliverySignerName ||
+    order.customerName ||
+    (isPt ? 'Cliente' : 'Customer');
 
   return `<!DOCTYPE html>
 <html lang="${isPt ? 'pt-BR' : 'en'}">
@@ -922,12 +941,25 @@ export function buildOrderWarrantyReceiptHtml({
       margin-top: 24px;
       margin-bottom: 14px;
       padding: 0 12px;
+      align-items: flex-end;
       page-break-inside: avoid;
       break-inside: avoid;
     }
     .sig-col {
       flex: 1;
       text-align: center;
+    }
+    .sig-img-wrap {
+      height: 62px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 4px;
+    }
+    .sig-img {
+      max-width: 100%;
+      max-height: 58px;
+      object-fit: contain;
     }
     .sig-line {
       border-top: 1px solid #64748B;
@@ -1041,12 +1073,26 @@ export function buildOrderWarrantyReceiptHtml({
 
     <div class="signatures">
       <div class="sig-col">
+        ${customerSignatureDataUri ? '<div class="sig-img-wrap"></div>' : ''}
         <div class="sig-line">${escapeHtml(tenant.name)}</div>
         <div class="sig-role">${isPt ? 'Responsável Técnico / Oficina' : 'Workshop Representative'}</div>
       </div>
       <div class="sig-col">
-        <div class="sig-line">${escapeHtml(order.customerName ?? (isPt ? 'Cliente' : 'Customer'))}</div>
-        <div class="sig-role">${isPt ? 'Recebi os aparelhos em perfeitas condições' : 'Customer Signature'}</div>
+        ${
+          customerSignatureDataUri
+            ? `<div class="sig-img-wrap"><img class="sig-img" src="${customerSignatureDataUri}" alt="Assinatura digital" /></div>`
+            : ''
+        }
+        <div class="sig-line">${escapeHtml(customerSignerDisplayName)}</div>
+        <div class="sig-role">${
+          customerSignatureDataUri && signedEntry
+            ? isPt
+              ? `Assinado digitalmente na retirada · ${escapeHtml(formatDateTime(signedEntry.warranty.deliveredDate, locale))}`
+              : `Digitally signed at pickup · ${escapeHtml(formatDateTime(signedEntry.warranty.deliveredDate, locale))}`
+            : isPt
+              ? 'Recebi os aparelhos em perfeitas condições'
+              : 'Customer Signature'
+        }</div>
       </div>
     </div>
 

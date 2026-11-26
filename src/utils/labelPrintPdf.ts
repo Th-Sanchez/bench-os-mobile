@@ -573,6 +573,9 @@ export async function shareSampleLabelPdf(params: {
     customerPhone: '11999990000',
     createdByUserId: '00000000-0000-4000-8000-000000000003',
     notes: null,
+    customerRating: null,
+    customerFeedback: null,
+    customerRatedAt: null,
     createdAt: nowIso,
     updatedAt: nowIso,
     items: [
@@ -601,6 +604,8 @@ export async function shareSampleLabelPdf(params: {
         approvedAt: null,
         finishedAt: null,
         deliveredAt: null,
+        deliverySignatureSvg: null,
+        deliverySignerName: null,
         discardedAt: null,
         parentItemId: null,
         parentOrderId: null,
