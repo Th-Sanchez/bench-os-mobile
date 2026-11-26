@@ -1,6 +1,7 @@
 import { apiRequest } from './http';
 import type {
   ArrivePartRequestRequest,
+  AssignTechnicianRequest,
   AuthResponse,
   BatchImportCustomersRequest,
   BatchImportCustomersResponse,
@@ -39,6 +40,7 @@ import type {
   ServiceOrderItemResponse,
   ServiceOrderResponse,
   SupplierResponse,
+  TechnicianOptionResponse,
   TenantSettingsResponse,
   TransactionCategory,
   TransactionPaymentMethod,
@@ -91,10 +93,16 @@ export const authApi = {
 export const usersApi = {
   me: () => apiRequest<UserResponse>('/api/v1/users/me'),
   list: () => apiRequest<UserResponse[]>('/api/v1/users'),
+  listTechnicians: () => apiRequest<TechnicianOptionResponse[]>('/api/v1/users/technicians'),
   create: (payload: CreateUserRequest) =>
     apiRequest<UserResponse>('/api/v1/users', { method: 'POST', body: payload }),
   updateStatus: (id: string, active: boolean) =>
     apiRequest<UserResponse>(`/api/v1/users/${id}/status`, { method: 'PATCH', body: { active } }),
+  updateCommission: (id: string, commissionPercent: number) =>
+    apiRequest<UserResponse>(`/api/v1/users/${id}/commission`, {
+      method: 'PATCH',
+      body: { commissionPercent },
+    }),
   resetPassword: (id: string, newPassword: string) =>
     apiRequest<UserResponse>(`/api/v1/users/${id}/password`, {
       method: 'PATCH',
@@ -205,6 +213,12 @@ export const ordersApi = {
 
   updateQuote: (orderId: string, itemId: string, payload: UpdateItemQuoteRequest) =>
     apiRequest<ServiceOrderItemResponse>(`/api/v1/orders/${orderId}/items/${itemId}/quote`, {
+      method: 'PATCH',
+      body: payload,
+    }),
+
+  assignTechnician: (orderId: string, itemId: string, payload: AssignTechnicianRequest) =>
+    apiRequest<ServiceOrderItemResponse>(`/api/v1/orders/${orderId}/items/${itemId}/technician`, {
       method: 'PATCH',
       body: payload,
     }),

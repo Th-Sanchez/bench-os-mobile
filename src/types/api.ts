@@ -1,5 +1,7 @@
 export type Role = 'OWNER' | 'ATTENDANT' | 'TECHNICIAN';
 
+export type CommissionBasis = 'LABOR_ONLY' | 'TOTAL_PRICE' | 'NET_PROFIT';
+
 export type DevicePlatform = 'ANDROID' | 'IOS' | 'WEB';
 
 export type Voltage = 'V110' | 'V220' | 'BIVOLT' | 'BATTERY' | 'UNKNOWN';
@@ -68,7 +70,14 @@ export interface UserResponse {
   email: string;
   role: Role;
   active: boolean;
+  commissionPercent?: number;
   createdAt: string;
+}
+
+export interface TechnicianOptionResponse {
+  id: string;
+  name: string;
+  role: Role;
 }
 
 export interface TenantResponse {
@@ -120,6 +129,7 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   role: Role;
+  commissionPercent?: number;
 }
 
 export interface ResetUserPasswordRequest {
@@ -160,6 +170,8 @@ export interface TenantSettingsResponse {
   businessHours: string | null;
   warrantyTerms: string | null;
   careTipsTemplates: Record<string, string[]>;
+  technicianAssignmentEnabled: boolean;
+  commissionBasis: CommissionBasis;
 }
 
 export interface UpdateShopBrandingRequest {
@@ -182,6 +194,8 @@ export interface UpdateTenantSettingsRequest {
   pixKey?: string;
   pixReceiverName?: string;
   pixReceiverCity?: string;
+  technicianAssignmentEnabled?: boolean;
+  commissionBasis?: CommissionBasis;
 }
 
 // Customer
@@ -269,6 +283,10 @@ export interface ServiceOrderItemResponse {
   parentOrderId: string | null;
   parentItemTag: string | null;
   warrantyReturn: boolean;
+  assignedTechnicianId?: string | null;
+  assignedTechnicianName?: string | null;
+  commissionPercent?: number | null;
+  commissionAmount?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -311,8 +329,16 @@ export interface OrderItemQueueResponse {
   finishedAt: string | null;
   parentItemId: string | null;
   warrantyReturn: boolean;
+  assignedTechnicianId?: string | null;
+  assignedTechnicianName?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AssignTechnicianRequest {
+  technicianId: string | null;
+  commissionPercent?: number | null;
+  clearCommissionOverride?: boolean;
 }
 
 export interface CreateWarrantyReturnRequest {
