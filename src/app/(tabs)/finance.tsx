@@ -39,6 +39,7 @@ import { SuppliersModal } from '@/components/finance/SuppliersModal';
 import { TransactionFormModal } from '@/components/finance/TransactionFormModal';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nProvider';
+import { formatTransactionDescription } from '@/utils/transactionDescription';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type {
   FinancialTransactionResponse,
@@ -711,8 +712,8 @@ export default function FinanceDashboardScreen() {
                       <View style={styles.payableInfo}>
                         <Text style={styles.payableTitle} numberOfLines={1}>
                           {tx.supplierName
-                            ? `${tx.supplierName} · ${tx.description}`
-                            : tx.description}
+                            ? `${tx.supplierName} · ${formatTransactionDescription(tx.description, locale)}`
+                            : formatTransactionDescription(tx.description, locale)}
                         </Text>
                         <View style={styles.payableMetaRow}>
                           {tx.dueDate ? (
@@ -902,8 +903,8 @@ export default function FinanceDashboardScreen() {
                         <View style={styles.txCopy}>
                           <Text style={styles.txTitle} numberOfLines={1}>
                             {tx.supplierName
-                              ? `${tx.supplierName} · ${tx.description}`
-                              : tx.description}
+                              ? `${tx.supplierName} · ${formatTransactionDescription(tx.description, locale)}`
+                              : formatTransactionDescription(tx.description, locale)}
                           </Text>
                           <Text
                             style={[

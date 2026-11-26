@@ -13,6 +13,7 @@ import type {
   TransactionPaymentMethod,
 } from '@/types/api';
 import { maskCpfCnpj, maskPhoneBR } from './masks';
+import { formatTransactionDescription } from './transactionDescription';
 
 const MONTH_FULL_PT = [
   'Janeiro',
@@ -216,7 +217,7 @@ export function buildMonthlyFinanceCsv(params: MonthlyExportParams): string {
         formatIsoTime(effectiveTs),
         typeLabel,
         getCategoryLabel(tx.category, locale),
-        tx.description,
+        formatTransactionDescription(tx.description, locale),
         tx.supplierName ?? '',
         getPaymentLabel(tx.paymentMethod, locale),
         statusLabel,
@@ -342,7 +343,7 @@ export async function shareMonthlyFinancePdf(params: MonthlyExportParams): Promi
             return `<tr>
               <td class="mono">${escapeHtml(formatIsoDate(ts, locale))}</td>
               <td>
-                <div class="tx-desc">${escapeHtml(tx.description)}</div>
+                <div class="tx-desc">${escapeHtml(formatTransactionDescription(tx.description, locale))}</div>
                 ${tx.supplierName ? `<div class="tx-sub">${escapeHtml(tx.supplierName)}</div>` : ''}
               </td>
               <td>${escapeHtml(getCategoryLabel(tx.category, locale))}</td>
@@ -504,7 +505,7 @@ export async function shareDailyCashClosingPdf(params: {
             const time = formatIsoTime(tx.paidAt ?? tx.createdAt);
             return `<tr>
               <td class="mono">${escapeHtml(time)}</td>
-              <td>${escapeHtml(tx.description)}${tx.supplierName ? ` · ${escapeHtml(tx.supplierName)}` : ''}</td>
+              <td>${escapeHtml(formatTransactionDescription(tx.description, locale))}${tx.supplierName ? ` · ${escapeHtml(tx.supplierName)}` : ''}</td>
               <td>${escapeHtml(getPaymentLabel(tx.paymentMethod, locale))}</td>
               <td class="num ${isIncome ? 'inc' : 'exp'}">${isIncome ? '+' : '-'} ${escapeHtml(formatMoney(tx.amount, locale))}</td>
             </tr>`;

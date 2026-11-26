@@ -147,6 +147,25 @@ export interface TenantSettingsResponse {
   whatsappQuoteTemplate: string | null;
   whatsappReadyTemplate: string | null;
   customApplianceTypes: string[];
+  googleReviewUrl: string | null;
+  deliverySignatureEnabled: boolean;
+  intakeChecklistTemplates: Record<string, string[]>;
+  pixKey: string | null;
+  pixReceiverName: string | null;
+  pixReceiverCity: string | null;
+  shopLogoDataUrl: string | null;
+  shopAddress: string | null;
+  businessHours: string | null;
+  warrantyTerms: string | null;
+  careTipsTemplates: Record<string, string[]>;
+}
+
+export interface UpdateShopBrandingRequest {
+  shopLogoDataUrl?: string;
+  clearLogo?: boolean;
+  shopAddress?: string;
+  businessHours?: string;
+  warrantyTerms?: string;
 }
 
 export interface UpdateTenantSettingsRequest {
@@ -156,6 +175,11 @@ export interface UpdateTenantSettingsRequest {
   whatsappIntakeTemplate?: string;
   whatsappQuoteTemplate: string;
   whatsappReadyTemplate?: string;
+  googleReviewUrl?: string;
+  deliverySignatureEnabled?: boolean;
+  pixKey?: string;
+  pixReceiverName?: string;
+  pixReceiverCity?: string;
 }
 
 // Customer
@@ -188,6 +212,11 @@ export interface BatchImportCustomersResponse {
 }
 
 // Order
+export interface IntakeChecklistEntry {
+  label: string;
+  checked: boolean;
+}
+
 export interface CreateServiceOrderItemRequest {
   applianceType: string;
   brand: string;
@@ -196,6 +225,7 @@ export interface CreateServiceOrderItemRequest {
   serialNumber?: string;
   accessories?: string;
   reportedIssue: string;
+  intakeChecklist?: IntakeChecklistEntry[];
 }
 
 export interface CreateServiceOrderRequest {
@@ -214,6 +244,7 @@ export interface ServiceOrderItemResponse {
   voltage: Voltage;
   serialNumber: string | null;
   accessories: string | null;
+  intakeChecklist?: IntakeChecklistEntry[];
   reportedIssue: string;
   technicalDiagnosis: string | null;
   status: ItemStatus;
@@ -229,6 +260,8 @@ export interface ServiceOrderItemResponse {
   approvedAt: string | null;
   finishedAt: string | null;
   deliveredAt: string | null;
+  deliverySignatureSvg: string | null;
+  deliverySignerName: string | null;
   discardedAt: string | null;
   parentItemId: string | null;
   parentOrderId: string | null;
@@ -248,6 +281,9 @@ export interface ServiceOrderResponse {
   customerPhone: string | null;
   createdByUserId: string;
   notes: string | null;
+  customerRating: number | null;
+  customerFeedback: string | null;
+  customerRatedAt: string | null;
   createdAt: string;
   updatedAt: string;
   items: ServiceOrderItemResponse[];
@@ -336,6 +372,8 @@ export interface PaymentPartRequest {
 
 export interface DeliverItemRequest {
   payments?: PaymentPartRequest[];
+  deliverySignatureSvg?: string;
+  deliverySignerName?: string;
 }
 
 export interface WhatsappLinkResponse {
@@ -397,15 +435,29 @@ export interface PublicOrderItemResponse {
   approvedAt: string | null;
   finishedAt: string | null;
   deliveredAt: string | null;
+  deliverySignatureSvg: string | null;
+  intakeChecklist?: IntakeChecklistEntry[];
   discardedAt: string | null;
   photos: PublicOrderItemPhotoResponse[];
+  careTips?: string[];
 }
 
 export interface PublicOrderResponse {
   shopName: string;
   shopPhone: string | null;
+  shopLogoDataUrl?: string | null;
+  shopAddress?: string | null;
+  businessHours?: string | null;
+  warrantyTerms?: string | null;
+  googleReviewUrl: string | null;
+  pixAmount?: number | null;
+  pixPayload?: string | null;
+  pixQrSvg?: string | null;
   orderNumber: number;
   createdAt: string;
+  customerRating: number | null;
+  customerFeedback: string | null;
+  customerRatedAt: string | null;
   items: PublicOrderItemResponse[];
 }
 

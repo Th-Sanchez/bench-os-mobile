@@ -18,15 +18,19 @@ import {
   CheckCircle2,
   FileText,
   MessageCircle,
+  PenTool,
   Plus,
+  QrCode,
   ShieldCheck,
   Trash2,
   User,
   X,
 } from 'lucide-react-native';
-import { ordersApi } from '@/api/endpoints';
+import { ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
+import { PixQrCodeBox } from '@/components/orders/PixQrCodeBox';
+import { SignaturePad, SignaturePreview } from '@/components/orders/SignaturePad';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TagBadge } from '@/components/ui/TagBadge';
@@ -35,6 +39,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { OrderPaymentMethod, ServiceOrderItemResponse } from '@/types/api';
 import { formatCurrencyInput, maskCurrencyBRL, parseCurrencyBRL } from '@/utils/masks';
+import { buildPixBrCode } from '@/utils/pixBrCode';
 import {
   computeWarrantyInfo,
   formatFullDate,
@@ -72,6 +77,13 @@ export default function DeliverItemScreen() {
     enabled: Boolean(orderId),
   });
 
+  const settingsQuery = useQuery({
+    queryKey: ['tenant-settings'],
+    queryFn: () => tenantSettingsApi.get(),
+    staleTime: 60_000,
+  });
+  const deliverySignatureEnabled = Boolean(settingsQuery.data?.deliverySignatureEnabled);
+
   const order = orderQuery.data;
   const item = useMemo(
     () => order?.items.find((i) => i.id === itemId),
@@ -79,6 +91,12 @@ export default function DeliverItemScreen() {
   );
 
   const [customParts, setCustomParts] = useState<PaymentDraft[] | null>(null);
+  const [showPixQr, setShowPixQr] = useState(false);
+  const [signatureSvg, setSignatureSvg] = useState<string | null>(null);
+  const [signerNameDraft, setSignerNameDraft] = useState<string | null>(null);
+  const [isDrawingSignature, setIsDrawingSignature] = useState(false);
+
+  const signerNameInput = signerNameDraft ?? (order?.customerName ?? '');
 
   const isFreeReturn = item?.status === 'REJECTED' || (item?.totalPrice ?? 0) <= 0;
   const expectedTotal = isFreeReturn ? 0 : (item?.totalPrice ?? 0);
@@ -104,6 +122,33 @@ export default function DeliverItemScreen() {
   const allPartsPositive = parts.every((p) => parseCurrencyBRL(p.amountText) > 0);
   const isBalanced = isFreeReturn || (parts.length > 0 && allPartsPositive && Math.abs(remaining) < 0.005);
 
+  const configuredPixKey = settingsQuery.data?.pixKey?.trim() ?? '';
+  const pixEnteredAmount = useMemo(() => {
+    const sum = parts
+      .filter((p) => p.paymentMethod === 'PIX')
+      .reduce((acc, p) => acc + parseCurrencyBRL(p.amountText), 0);
+    return Math.round(sum * 100) / 100;
+  }, [parts]);
+
+  const pixPayload = useMemo(() => {
+    if (isFreeReturn || !configuredPixKey || pixEnteredAmount <= 0 || !order) return null;
+    return buildPixBrCode({
+      pixKey: configuredPixKey,
+      merchantName: settingsQuery.data?.pixReceiverName || session?.tenant.name || 'OFICINA',
+      merchantCity: settingsQuery.data?.pixReceiverCity || 'BRASIL',
+      amount: pixEnteredAmount,
+      txid: `OS${order.orderNumber}`,
+    });
+  }, [
+    isFreeReturn,
+    configuredPixKey,
+    pixEnteredAmount,
+    order,
+    settingsQuery.data?.pixReceiverName,
+    settingsQuery.data?.pixReceiverCity,
+    session?.tenant.name,
+  ]);
+
   const deliverMutation = useMutation({
     mutationFn: async () => {
       const submittedPayments: ReceiptPaymentPart[] = isFreeReturn
@@ -113,13 +158,28 @@ export default function DeliverItemScreen() {
             amount: parseCurrencyBRL(p.amountText),
           }));
 
+      const trimmedSigner = signerNameInput.trim();
+      const signaturePayload = !deliverySignatureEnabled
+        ? {}
+        : signatureSvg
+          ? {
+              deliverySignatureSvg: signatureSvg,
+              deliverySignerName: trimmedSigner || undefined,
+            }
+          : trimmedSigner && trimmedSigner !== (order?.customerName ?? '').trim()
+            ? { deliverySignerName: trimmedSigner }
+            : {};
+
       const updatedItem = isFreeReturn
-        ? await ordersApi.deliverItem(orderId, itemId, {})
+        ? await ordersApi.deliverItem(orderId, itemId, {
+            ...signaturePayload,
+          })
         : await ordersApi.deliverItem(orderId, itemId, {
             payments: submittedPayments.map((p) => ({
               paymentMethod: p.paymentMethod as OrderPaymentMethod,
               amount: p.amount,
             })),
+            ...signaturePayload,
           });
 
       return { updatedItem, submittedPayments };
@@ -173,6 +233,7 @@ export default function DeliverItemScreen() {
     try {
       await shareConsolidatedOrderReceiptPdf({
         tenant: session.tenant,
+        settings: settingsQuery.data ?? null,
         order,
         locale,
         overrideItem: deliveredReceipt.item,
@@ -295,6 +356,26 @@ export default function DeliverItemScreen() {
             ) : null}
           </Card>
 
+          {deliveredReceipt.item.deliverySignatureSvg ? (
+            <Card style={styles.signatureSummaryCard}>
+              <View style={styles.signatureHeaderRow}>
+                <PenTool size={15} color={colors.brandPrimary} />
+                <Text style={styles.signatureSectionTitle}>
+                  {locale === 'pt-BR'
+                    ? 'Assinatura Digital Registrada'
+                    : 'Digital Signature Captured'}
+                </Text>
+              </View>
+              <SignaturePreview svg={deliveredReceipt.item.deliverySignatureSvg} height={74} />
+              {deliveredReceipt.item.deliverySignerName ? (
+                <Text style={styles.signerCaption}>
+                  {locale === 'pt-BR' ? 'Retirado por: ' : 'Picked up by: '}
+                  {deliveredReceipt.item.deliverySignerName}
+                </Text>
+              ) : null}
+            </Card>
+          ) : null}
+
           {warranty.hasWarranty && warranty.expiryDate ? (
             <Card accentBorderColor={colors.brandPrimaryBorder} style={styles.warrantySummaryCard}>
               <View style={styles.warrantySummaryHeader}>
@@ -368,6 +449,7 @@ export default function DeliverItemScreen() {
         </View>
 
         <ScrollView
+          scrollEnabled={!isDrawingSignature}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
@@ -586,8 +668,72 @@ export default function DeliverItemScreen() {
                   </View>
                 </View>
               </View>
+
+              {/* Direct Pix QR Code (when workshop Pix key is configured and PIX is selected) */}
+              {pixPayload ? (
+                <View style={{ gap: 8 }}>
+                  <Button
+                    label={
+                      showPixQr
+                        ? locale === 'pt-BR'
+                          ? 'Ocultar QR Code Pix'
+                          : 'Hide Pix QR Code'
+                        : locale === 'pt-BR'
+                          ? `Mostrar QR Code Pix · ${formatCurrency(pixEnteredAmount)}`
+                          : `Show Pix QR Code · ${formatCurrency(pixEnteredAmount)}`
+                    }
+                    variant="secondary"
+                    icon={<QrCode size={16} color="#0F766E" />}
+                    onPress={() => setShowPixQr((prev) => !prev)}
+                  />
+                  {showPixQr ? (
+                    <PixQrCodeBox
+                      payload={pixPayload}
+                      formattedAmount={formatCurrency(pixEnteredAmount)}
+                      locale={locale}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
             </>
           )}
+          {/* Digital Pickup Signature Card (controlled by shop settings) */}
+          {deliverySignatureEnabled ? (
+            <Card style={styles.signatureCard}>
+              <View style={styles.signatureHeaderRow}>
+                <PenTool size={15} color={colors.brandPrimary} />
+                <Text style={styles.signatureSectionTitle}>
+                  {locale === 'pt-BR'
+                    ? 'Assinatura na Retirada (Opcional)'
+                    : 'Pickup Signature (Optional)'}
+                </Text>
+              </View>
+
+              <View style={styles.amountGroup}>
+                <Text style={styles.amountLabel}>
+                  {locale === 'pt-BR' ? 'Retirado por' : 'Picked up by'}
+                </Text>
+                <TextInput
+                  value={signerNameInput}
+                  onChangeText={setSignerNameDraft}
+                  placeholder={
+                    locale === 'pt-BR'
+                      ? 'Nome de quem está retirando'
+                      : 'Name of person picking up'
+                  }
+                  placeholderTextColor={colors.textMuted}
+                  maxLength={120}
+                  style={styles.signerInput}
+                />
+              </View>
+
+              <SignaturePad
+                locale={locale}
+                onChange={setSignatureSvg}
+                onDrawingChange={setIsDrawingSignature}
+              />
+            </Card>
+          ) : null}
         </ScrollView>
 
         {/* Sticky Bottom CTA */}
@@ -1035,5 +1181,38 @@ const styles = StyleSheet.create({
   },
   successSecondaryBtn: {
     flex: 1,
+  },
+  signatureCard: {
+    gap: 10,
+  },
+  signatureSummaryCard: {
+    gap: 8,
+  },
+  signatureHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  signatureSectionTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 13.5,
+    color: colors.textPrimary,
+  },
+  signerInput: {
+    height: 44,
+    backgroundColor: colors.bgCanvas,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13.5,
+    color: colors.textPrimary,
+  },
+  signerCaption: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,16 +16,25 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image } from 'expo-image';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Check,
+  ClipboardCheck,
+  ImagePlus,
   Info,
   KeyRound,
+  Lightbulb,
   LogOut,
   Package,
+  PenTool,
   Plus,
   Printer,
   QrCode,
+  RotateCcw,
   Settings,
+  Trash2,
   X,
 } from 'lucide-react-native';
 import { partsCatalogApi, tenantSettingsApi, usersApi } from '@/api/endpoints';
@@ -54,6 +63,10 @@ import type {
   WhatsappMessageStage,
 } from '@/types/api';
 import { shareSampleLabelPdf } from '@/utils/labelPrintPdf';
+import {
+  mergeApplianceTypes,
+  resolveChecklistForCategory,
+} from '@/constants/appliances';
 import {
   formatCurrencyInput,
   maskCurrencyBRL,
@@ -144,6 +157,19 @@ export default function SettingsScreen() {
   const [laborCostDraft, setLaborCostDraft] = useState<string | null>(null);
   const [estimatedDaysDraft, setEstimatedDaysDraft] = useState<string | null>(null);
   const [abandonmentDaysDraft, setAbandonmentDaysDraft] = useState<string | null>(null);
+  const [googleReviewUrlDraft, setGoogleReviewUrlDraft] = useState<string | null>(null);
+  const [deliverySignatureDraft, setDeliverySignatureDraft] = useState<boolean | null>(null);
+  const [pixKeyDraft, setPixKeyDraft] = useState<string | null>(null);
+  const [pixReceiverNameDraft, setPixReceiverNameDraft] = useState<string | null>(null);
+  const [pixReceiverCityDraft, setPixReceiverCityDraft] = useState<string | null>(null);
+  const [logoDraft, setLogoDraft] = useState<string | null | undefined>(undefined);
+  const [shopAddressDraft, setShopAddressDraft] = useState<string | null>(null);
+  const [businessHoursDraft, setBusinessHoursDraft] = useState<string | null>(null);
+  const [warrantyTermsDraft, setWarrantyTermsDraft] = useState<string | null>(null);
+  const [brandingFeedback, setBrandingFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const [activeTemplateStage, setActiveTemplateStage] = useState<WhatsappMessageStage>('INTAKE');
   const [intakeDraft, setIntakeDraft] = useState<string | null>(null);
@@ -151,6 +177,10 @@ export default function SettingsScreen() {
   const [readyDraft, setReadyDraft] = useState<string | null>(null);
 
   const [newApplianceType, setNewApplianceType] = useState('');
+  const [selectedChecklistCategory, setSelectedChecklistCategory] = useState('Micro-ondas');
+  const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [selectedCareCategory, setSelectedCareCategory] = useState('Micro-ondas');
+  const [newCareTip, setNewCareTip] = useState('');
   const [saveFeedback, setSaveFeedback] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -186,6 +216,17 @@ export default function SettingsScreen() {
     estimatedDaysDraft ?? String(settingsData?.defaultEstimatedDays ?? 3);
   const abandonmentDaysInput =
     abandonmentDaysDraft ?? String(settingsData?.abandonmentDays ?? 180);
+  const googleReviewUrlInput =
+    googleReviewUrlDraft ?? (settingsData?.googleReviewUrl ?? '');
+  const deliverySignatureEnabled =
+    deliverySignatureDraft ?? Boolean(settingsData?.deliverySignatureEnabled);
+  const pixKeyInput = pixKeyDraft ?? (settingsData?.pixKey ?? '');
+  const pixReceiverNameInput = pixReceiverNameDraft ?? (settingsData?.pixReceiverName ?? '');
+  const pixReceiverCityInput = pixReceiverCityDraft ?? (settingsData?.pixReceiverCity ?? '');
+  const currentLogoUrl = logoDraft !== undefined ? logoDraft : (settingsData?.shopLogoDataUrl ?? null);
+  const shopAddressInput = shopAddressDraft ?? (settingsData?.shopAddress ?? '');
+  const businessHoursInput = businessHoursDraft ?? (settingsData?.businessHours ?? '');
+  const warrantyTermsInput = warrantyTermsDraft ?? (settingsData?.warrantyTerms ?? '');
 
   const intakeTemplate =
     intakeDraft ??
@@ -226,6 +267,11 @@ export default function SettingsScreen() {
       setLaborCostDraft(null);
       setEstimatedDaysDraft(null);
       setAbandonmentDaysDraft(null);
+      setGoogleReviewUrlDraft(null);
+      setDeliverySignatureDraft(null);
+      setPixKeyDraft(null);
+      setPixReceiverNameDraft(null);
+      setPixReceiverCityDraft(null);
       setIntakeDraft(null);
       setQuoteDraft(null);
       setReadyDraft(null);
@@ -265,6 +311,223 @@ export default function SettingsScreen() {
       queryClient.setQueryData(['tenant-settings'], updated);
     },
   });
+
+  const checklistTemplates = useMemo(
+    () => settingsData?.intakeChecklistTemplates ?? {},
+    [settingsData?.intakeChecklistTemplates]
+  );
+
+  const checklistCategories = useMemo(
+    () =>
+      mergeApplianceTypes([
+        ...(settingsData?.customApplianceTypes ?? []),
+        ...Object.keys(checklistTemplates),
+      ]),
+    [settingsData?.customApplianceTypes, checklistTemplates]
+  );
+
+  const activeChecklistItems = useMemo(
+    () => resolveChecklistForCategory(checklistTemplates, selectedChecklistCategory),
+    [checklistTemplates, selectedChecklistCategory]
+  );
+
+  const updateChecklistsMutation = useMutation({
+    mutationFn: (templates: Record<string, string[]>) =>
+      tenantSettingsApi.updateIntakeChecklists(templates),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      setNewChecklistItem('');
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const resetChecklistsMutation = useMutation({
+    mutationFn: () => tenantSettingsApi.resetIntakeChecklists(),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const updateBrandingMutation = useMutation({
+    mutationFn: () =>
+      tenantSettingsApi.updateBranding({
+        shopLogoDataUrl: logoDraft === undefined ? undefined : (logoDraft ?? undefined),
+        clearLogo: logoDraft === null ? true : undefined,
+        shopAddress: shopAddressInput.trim(),
+        businessHours: businessHoursInput.trim(),
+        warrantyTerms: warrantyTermsInput.trim(),
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      setLogoDraft(undefined);
+      setShopAddressDraft(null);
+      setBusinessHoursDraft(null);
+      setWarrantyTermsDraft(null);
+      setBrandingFeedback({
+        type: 'success',
+        text:
+          locale === 'pt-BR'
+            ? 'Identidade visual e termos atualizados.'
+            : 'Shop branding and terms saved.',
+      });
+    },
+    onError: (err) => {
+      setBrandingFeedback({
+        type: 'error',
+        text: err instanceof Error ? err.message : t.common.errorGeneric,
+      });
+    },
+  });
+
+  const handlePickLogo = async () => {
+    setBrandingFeedback(null);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Permissão necessária' : 'Permission required',
+        locale === 'pt-BR'
+          ? 'Permita o acesso à galeria para escolher a logo da oficina.'
+          : 'Allow photo library access to pick your workshop logo.'
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets[0]?.uri) return;
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 256 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      if (manipulated.base64) {
+        setLogoDraft(`data:image/jpeg;base64,${manipulated.base64}`);
+      }
+    } catch (err) {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro ao processar imagem' : 'Could not process image',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    }
+  };
+
+  const mutateCategoryChecklist = (nextItems: string[]) => {
+    const nextMap: Record<string, string[]> = {};
+    const targetLower = selectedChecklistCategory.trim().toLowerCase();
+    let replaced = false;
+    for (const [key, items] of Object.entries(checklistTemplates)) {
+      if (key.trim().toLowerCase() === targetLower) {
+        nextMap[key] = nextItems;
+        replaced = true;
+      } else {
+        nextMap[key] = items;
+      }
+    }
+    if (!replaced) {
+      nextMap[selectedChecklistCategory] = nextItems;
+    }
+    updateChecklistsMutation.mutate(nextMap);
+  };
+
+  const handleAddChecklistItem = () => {
+    const trimmed = newChecklistItem.trim();
+    if (!trimmed) return;
+    if (activeChecklistItems.some((item) => item.toLowerCase() === trimmed.toLowerCase())) {
+      setNewChecklistItem('');
+      return;
+    }
+    mutateCategoryChecklist([...activeChecklistItems, trimmed]);
+  };
+
+  const careTipsTemplates = useMemo(
+    () => settingsData?.careTipsTemplates ?? {},
+    [settingsData?.careTipsTemplates]
+  );
+
+  const careTipCategories = useMemo(
+    () =>
+      mergeApplianceTypes([
+        ...(settingsData?.customApplianceTypes ?? []),
+        ...Object.keys(careTipsTemplates),
+      ]),
+    [settingsData?.customApplianceTypes, careTipsTemplates]
+  );
+
+  const activeCareTips = useMemo(
+    () => resolveChecklistForCategory(careTipsTemplates, selectedCareCategory),
+    [careTipsTemplates, selectedCareCategory]
+  );
+
+  const updateCareTipsMutation = useMutation({
+    mutationFn: (templates: Record<string, string[]>) =>
+      tenantSettingsApi.updateCareTips(templates),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+      setNewCareTip('');
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const resetCareTipsMutation = useMutation({
+    mutationFn: () => tenantSettingsApi.resetCareTips(),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['tenant-settings'], updated);
+    },
+    onError: (err) => {
+      Alert.alert(
+        locale === 'pt-BR' ? 'Erro' : 'Error',
+        err instanceof Error ? err.message : t.common.errorGeneric
+      );
+    },
+  });
+
+  const mutateCategoryCareTips = (nextTips: string[]) => {
+    const nextMap: Record<string, string[]> = {};
+    const targetLower = selectedCareCategory.trim().toLowerCase();
+    let replaced = false;
+    for (const [key, tips] of Object.entries(careTipsTemplates)) {
+      if (key.trim().toLowerCase() === targetLower) {
+        nextMap[key] = nextTips;
+        replaced = true;
+      } else {
+        nextMap[key] = tips;
+      }
+    }
+    if (!replaced) {
+      nextMap[selectedCareCategory] = nextTips;
+    }
+    updateCareTipsMutation.mutate(nextMap);
+  };
+
+  const handleAddCareTip = () => {
+    const trimmed = newCareTip.trim();
+    if (!trimmed) return;
+    if (activeCareTips.some((tip) => tip.toLowerCase() === trimmed.toLowerCase())) {
+      setNewCareTip('');
+      return;
+    }
+    mutateCategoryCareTips([...activeCareTips, trimmed]);
+  };
 
   const toggleUserStatusMutation = useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
@@ -320,6 +583,30 @@ export default function SettingsScreen() {
       return;
     }
 
+    const trimmedGoogleUrl = googleReviewUrlInput.trim();
+    if (trimmedGoogleUrl && !/^https?:\/\//i.test(trimmedGoogleUrl)) {
+      setSaveFeedback({
+        type: 'error',
+        text:
+          locale === 'pt-BR'
+            ? 'O link do Google deve começar com https:// ou http://'
+            : 'Google review link must start with https:// or http://',
+      });
+      return;
+    }
+
+    const trimmedPixKey = pixKeyInput.trim();
+    if (trimmedPixKey && /\s/.test(trimmedPixKey)) {
+      setSaveFeedback({
+        type: 'error',
+        text:
+          locale === 'pt-BR'
+            ? 'A chave Pix não pode conter espaços.'
+            : 'Pix key must not contain spaces.',
+      });
+      return;
+    }
+
     updateSettingsMutation.mutate({
       defaultLaborCost: Number(labor.toFixed(2)),
       defaultEstimatedDays: estDays,
@@ -327,6 +614,11 @@ export default function SettingsScreen() {
       whatsappIntakeTemplate: toApiTemplate(intakeTemplate.trim()),
       whatsappQuoteTemplate: toApiTemplate(quoteTemplate.trim()),
       whatsappReadyTemplate: toApiTemplate(readyTemplate.trim()),
+      googleReviewUrl: trimmedGoogleUrl,
+      deliverySignatureEnabled,
+      pixKey: trimmedPixKey,
+      pixReceiverName: pixReceiverNameInput.trim(),
+      pixReceiverCity: pixReceiverCityInput.trim(),
     });
   };
 
@@ -550,6 +842,132 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
+              {/* Google Business Review Link */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  {locale === 'pt-BR'
+                    ? 'Link de avaliação no Google (opcional)'
+                    : 'Google Review Link (optional)'}
+                </Text>
+                <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                  <TextInput
+                    value={googleReviewUrlInput}
+                    onChangeText={setGoogleReviewUrlDraft}
+                    placeholder="https://g.page/r/.../review"
+                    placeholderTextColor={colors.textMuted}
+                    editable={isOwner}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    maxLength={500}
+                    style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                  />
+                </View>
+                <View style={styles.infoHintRow}>
+                  <Info size={13} color={colors.textMuted} />
+                  <Text style={styles.infoHintText}>
+                    {locale === 'pt-BR'
+                      ? 'Clientes que avaliarem com 5★ no link /track verão um botão direto para avaliar sua oficina no Google.'
+                      : 'Customers who rate 5★ on /track see a direct button to review your shop on Google.'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Pix Static QR Code Settings */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  {locale === 'pt-BR'
+                    ? 'Chave Pix da oficina (opcional)'
+                    : 'Workshop Pix Key (optional)'}
+                </Text>
+                <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                  <TextInput
+                    value={pixKeyInput}
+                    onChangeText={setPixKeyDraft}
+                    placeholder="CNPJ/CPF, e-mail, aleatória ou +55..."
+                    placeholderTextColor={colors.textMuted}
+                    editable={isOwner}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={77}
+                    style={[styles.monoInput, { fontSize: 13 }]}
+                  />
+                </View>
+                <View style={styles.twoColRow}>
+                  <View style={styles.colField}>
+                    <Text style={styles.fieldLabel}>
+                      {locale === 'pt-BR' ? 'Titular Pix (opcional)' : 'Pix Receiver'}
+                    </Text>
+                    <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                      <TextInput
+                        value={pixReceiverNameInput}
+                        onChangeText={setPixReceiverNameDraft}
+                        placeholder={session?.tenant.name ?? 'Oficina'}
+                        placeholderTextColor={colors.textMuted}
+                        editable={isOwner}
+                        maxLength={60}
+                        style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.colField}>
+                    <Text style={styles.fieldLabel}>
+                      {locale === 'pt-BR' ? 'Cidade Pix (opcional)' : 'Pix City'}
+                    </Text>
+                    <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                      <TextInput
+                        value={pixReceiverCityInput}
+                        onChangeText={setPixReceiverCityDraft}
+                        placeholder="Sao Paulo"
+                        placeholderTextColor={colors.textMuted}
+                        editable={isOwner}
+                        maxLength={60}
+                        style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                      />
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.infoHintRow}>
+                  <Info size={13} color={colors.textMuted} />
+                  <Text style={styles.infoHintText}>
+                    {locale === 'pt-BR'
+                      ? 'Gera QR Code e Copia e Cola com valor exato no /track e na tela de entrega. Deixe em branco para desativar.'
+                      : 'Generates exact-amount Pix QR & Copy-Paste on /track and delivery screen. Leave blank to disable.'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Digital Pickup Signature Toggle */}
+              <View style={styles.logoutDivider} />
+              <View style={styles.langRow}>
+                <View style={styles.langCopy}>
+                  <View style={styles.printHeaderTitleRow}>
+                    <PenTool size={14} color={colors.brandPrimary} strokeWidth={2.1} />
+                    <Text style={styles.langTitle}>
+                      {locale === 'pt-BR'
+                        ? 'Assinatura digital na retirada'
+                        : 'Digital pickup signature'}
+                    </Text>
+                  </View>
+                  <Text style={styles.langSubtitle}>
+                    {locale === 'pt-BR'
+                      ? 'Exibe o campo de assinatura na tela de entrega (app e web) para constar no comprovante e garantia'
+                      : 'Shows the signature pad on delivery screens (mobile & web) and embeds it in the warranty receipt'}
+                  </Text>
+                </View>
+                <Switch
+                  value={deliverySignatureEnabled}
+                  disabled={!isOwner}
+                  onValueChange={(nextValue) => setDeliverySignatureDraft(nextValue)}
+                  trackColor={{
+                    false: colors.borderStrong,
+                    true: colors.brandPrimary,
+                  }}
+                  thumbColor={colors.bgSurface}
+                />
+              </View>
+              <View style={styles.logoutDivider} />
+
               {/* 3-Stage WhatsApp Templates */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>
@@ -649,6 +1067,199 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* Branding & Custom Warranty Terms Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.printHeaderTitleRow}>
+              <ImagePlus size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+              <Text style={styles.cardOverline}>
+                {locale === 'pt-BR'
+                  ? 'IDENTIDADE VISUAL & TERMOS'
+                  : 'SHOP BRANDING & TERMS'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.langSubtitle}>
+            {locale === 'pt-BR'
+              ? 'Exibidos na página /track, no comprovante digital e no PDF de garantia da oficina.'
+              : 'Displayed on /track, digital receipt, and warranty PDF.'}
+          </Text>
+
+          <View style={styles.formGap}>
+            {/* Logo row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {currentLogoUrl ? (
+                <Image
+                  source={{ uri: currentLogoUrl }}
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: radius.md,
+                    borderWidth: 1,
+                    borderColor: colors.borderSubtle,
+                    backgroundColor: '#FFFFFF',
+                  }}
+                  contentFit="contain"
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: radius.md,
+                    borderWidth: 1,
+                    borderStyle: 'dashed',
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.bgCanvas,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ImagePlus size={22} color={colors.textMuted} />
+                </View>
+              )}
+
+              {isOwner ? (
+                <View style={{ flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <Button
+                    label={
+                      currentLogoUrl
+                        ? locale === 'pt-BR'
+                          ? 'Trocar logo'
+                          : 'Change logo'
+                        : locale === 'pt-BR'
+                          ? 'Escolher logo'
+                          : 'Pick logo'
+                    }
+                    variant="secondary"
+                    fullWidth={false}
+                    onPress={() => void handlePickLogo()}
+                  />
+                  {currentLogoUrl ? (
+                    <Pressable
+                      onPress={() => setLogoDraft(null)}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: radius.md,
+                        borderWidth: 1,
+                        borderColor: colors.dangerBorder,
+                        backgroundColor: colors.dangerSoft,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Trash2 size={16} color={colors.danger} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={[styles.langSubtitle, { flex: 1 }]}>
+                  {currentLogoUrl
+                    ? locale === 'pt-BR'
+                      ? 'Logo configurada pela oficina'
+                      : 'Shop logo configured'
+                    : locale === 'pt-BR'
+                      ? 'Sem logo cadastrada'
+                      : 'No logo configured'}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {locale === 'pt-BR' ? 'Endereço da oficina (opcional)' : 'Shop address (optional)'}
+              </Text>
+              <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                <TextInput
+                  value={shopAddressInput}
+                  onChangeText={setShopAddressDraft}
+                  placeholder="Rua das Flores, 123 - Centro"
+                  placeholderTextColor={colors.textMuted}
+                  editable={isOwner}
+                  maxLength={300}
+                  style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {locale === 'pt-BR' ? 'Horário de atendimento (opcional)' : 'Business hours (optional)'}
+              </Text>
+              <View style={[styles.monoInputBox, !isOwner && styles.inputReadonly]}>
+                <TextInput
+                  value={businessHoursInput}
+                  onChangeText={setBusinessHoursDraft}
+                  placeholder="Seg a Sex 8h30–18h · Sáb 8h30–13h"
+                  placeholderTextColor={colors.textMuted}
+                  editable={isOwner}
+                  maxLength={200}
+                  style={[styles.monoInput, { fontFamily: fonts.bodyRegular, fontSize: 13 }]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {locale === 'pt-BR'
+                  ? 'Termo de garantia personalizado (opcional)'
+                  : 'Custom warranty terms (optional)'}
+              </Text>
+              <TextInput
+                value={warrantyTermsInput}
+                onChangeText={setWarrantyTermsDraft}
+                editable={isOwner}
+                multiline
+                maxLength={3000}
+                textAlignVertical="top"
+                placeholder={
+                  locale === 'pt-BR'
+                    ? 'Deixe em branco para usar o termo padrão do BenchOS nos comprovantes.'
+                    : 'Leave blank to use default BenchOS warranty terms.'
+                }
+                placeholderTextColor={colors.textMuted}
+                style={[styles.textarea, !isOwner && styles.inputReadonly]}
+              />
+            </View>
+
+            {brandingFeedback ? (
+              <View
+                style={[
+                  styles.feedbackBox,
+                  brandingFeedback.type === 'success'
+                    ? styles.feedbackSuccess
+                    : styles.feedbackError,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.feedbackText,
+                    brandingFeedback.type === 'success'
+                      ? styles.feedbackTextSuccess
+                      : styles.feedbackTextError,
+                  ]}
+                >
+                  {brandingFeedback.text}
+                </Text>
+              </View>
+            ) : null}
+
+            {isOwner ? (
+              <Button
+                label={locale === 'pt-BR' ? 'Salvar identidade' : 'Save branding'}
+                icon={<Check size={16} color={colors.textOnDark} strokeWidth={2.4} />}
+                loading={updateBrandingMutation.isPending}
+                onPress={() => {
+                  setBrandingFeedback(null);
+                  updateBrandingMutation.mutate();
+                }}
+              />
+            ) : null}
+          </View>
+        </View>
+
         {/* Custom Appliance Types Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -715,6 +1326,284 @@ export default function SettingsScreen() {
                       hitSlop={6}
                     >
                       <X size={13} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Intake Checklist by Category Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.printHeaderTitleRow}>
+              <ClipboardCheck size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+              <Text style={styles.cardOverline}>
+                {locale === 'pt-BR'
+                  ? 'CHECKLIST DE RECEBIMENTO'
+                  : 'INTAKE CHECKLIST'}
+              </Text>
+            </View>
+            {isOwner ? (
+              <Pressable
+                disabled={resetChecklistsMutation.isPending}
+                onPress={() => resetChecklistsMutation.mutate()}
+                hitSlop={8}
+                style={styles.printHeaderTitleRow}
+              >
+                <RotateCcw size={12} color={colors.brandPrimary} />
+                <Text style={styles.addMemberLink}>
+                  {locale === 'pt-BR' ? 'Padrões' : 'Defaults'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Text style={styles.langSubtitle}>
+            {locale === 'pt-BR'
+              ? 'Itens rápidos exibidos na abertura da OS para cada categoria (ex.: retirar prato do micro-ondas).'
+              : 'Quick checks displayed when opening a new order for each category.'}
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+          >
+            {checklistCategories.map((cat) => {
+              const active = cat === selectedChecklistCategory;
+              const count = resolveChecklistForCategory(checklistTemplates, cat).length;
+              return (
+                <Pressable
+                  key={cat}
+                  onPress={() => setSelectedChecklistCategory(cat)}
+                  style={[
+                    styles.customChip,
+                    active && {
+                      backgroundColor: colors.brandPrimarySoft,
+                      borderColor: colors.brandPrimary,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.customChipText,
+                      active && { color: colors.brandPrimary, fontFamily: fonts.bodySemiBold },
+                    ]}
+                  >
+                    {count > 0 ? `${cat} (${count})` : cat}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {isOwner ? (
+            <View style={styles.addCustomRow}>
+              <TextInput
+                value={newChecklistItem}
+                onChangeText={setNewChecklistItem}
+                placeholder={
+                  locale === 'pt-BR'
+                    ? `Novo item para ${selectedChecklistCategory}...`
+                    : `New check for ${selectedChecklistCategory}...`
+                }
+                placeholderTextColor={colors.textMuted}
+                style={styles.customTypeInput}
+                maxLength={160}
+                returnKeyType="done"
+                onSubmitEditing={handleAddChecklistItem}
+              />
+              <Pressable
+                disabled={!newChecklistItem.trim() || updateChecklistsMutation.isPending}
+                onPress={handleAddChecklistItem}
+                style={[
+                  styles.addCustomBtn,
+                  (!newChecklistItem.trim() || updateChecklistsMutation.isPending) &&
+                    styles.addCustomBtnDisabled,
+                ]}
+              >
+                {updateChecklistsMutation.isPending ? (
+                  <ActivityIndicator size="small" color={colors.textOnDark} />
+                ) : (
+                  <Plus size={18} color={colors.textOnDark} strokeWidth={2.4} />
+                )}
+              </Pressable>
+            </View>
+          ) : null}
+
+          {activeChecklistItems.length === 0 ? (
+            <Text style={styles.customEmptyText}>
+              {locale === 'pt-BR'
+                ? `Nenhum item configurado para ${selectedChecklistCategory}.`
+                : `No checklist items configured for ${selectedChecklistCategory}.`}
+            </Text>
+          ) : (
+            <View style={styles.customChipsWrap}>
+              {activeChecklistItems.map((itemLabel) => (
+                <View key={itemLabel} style={styles.customChip}>
+                  <Text style={styles.customChipText}>✓ {itemLabel}</Text>
+                  {isOwner ? (
+                    <Pressable
+                      disabled={updateChecklistsMutation.isPending}
+                      onPress={() =>
+                        mutateCategoryChecklist(
+                          activeChecklistItems.filter((x) => x !== itemLabel)
+                        )
+                      }
+                      hitSlop={6}
+                    >
+                      <X size={13} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Post-Delivery Appliance Care Tips Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.printHeaderTitleRow}>
+              <Lightbulb size={14} color={colors.successDark} strokeWidth={2.2} />
+              <Text style={styles.cardOverline}>
+                {locale === 'pt-BR' ? 'DICAS DE CONSERVAÇÃO' : 'APPLIANCE CARE TIPS'}
+              </Text>
+            </View>
+            {isOwner ? (
+              <Pressable
+                disabled={resetCareTipsMutation.isPending}
+                onPress={() => resetCareTipsMutation.mutate()}
+                hitSlop={8}
+                style={styles.printHeaderTitleRow}
+              >
+                <RotateCcw size={12} color={colors.brandPrimary} />
+                <Text style={styles.addMemberLink}>
+                  {locale === 'pt-BR' ? 'Padrões' : 'Defaults'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Text style={styles.langSubtitle}>
+            {locale === 'pt-BR'
+              ? 'Exibidas ao cliente no /track e comprovante após a entrega para aumentar a vida útil do aparelho.'
+              : 'Displayed to customers on /track and receipts after delivery to help appliances last longer.'}
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+          >
+            {careTipCategories.map((cat) => {
+              const active = cat === selectedCareCategory;
+              const count = resolveChecklistForCategory(careTipsTemplates, cat).length;
+              return (
+                <Pressable
+                  key={cat}
+                  onPress={() => setSelectedCareCategory(cat)}
+                  style={[
+                    styles.customChip,
+                    active && {
+                      backgroundColor: colors.successSoft,
+                      borderColor: colors.successBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.customChipText,
+                      active && { color: colors.successDark, fontFamily: fonts.bodySemiBold },
+                    ]}
+                  >
+                    {count > 0 ? `${cat} (${count})` : cat}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {isOwner ? (
+            <View style={styles.addCustomRow}>
+              <TextInput
+                value={newCareTip}
+                onChangeText={setNewCareTip}
+                placeholder={
+                  locale === 'pt-BR'
+                    ? `Nova dica para ${selectedCareCategory}...`
+                    : `New care tip for ${selectedCareCategory}...`
+                }
+                placeholderTextColor={colors.textMuted}
+                style={styles.customTypeInput}
+                maxLength={240}
+                returnKeyType="done"
+                onSubmitEditing={handleAddCareTip}
+              />
+              <Pressable
+                disabled={!newCareTip.trim() || updateCareTipsMutation.isPending}
+                onPress={handleAddCareTip}
+                style={[
+                  styles.addCustomBtn,
+                  (!newCareTip.trim() || updateCareTipsMutation.isPending) &&
+                    styles.addCustomBtnDisabled,
+                ]}
+              >
+                {updateCareTipsMutation.isPending ? (
+                  <ActivityIndicator size="small" color={colors.textOnDark} />
+                ) : (
+                  <Plus size={18} color={colors.textOnDark} strokeWidth={2.4} />
+                )}
+              </Pressable>
+            </View>
+          ) : null}
+
+          {activeCareTips.length === 0 ? (
+            <Text style={styles.customEmptyText}>
+              {locale === 'pt-BR'
+                ? `Nenhuma dica configurada para ${selectedCareCategory}.`
+                : `No care tips configured for ${selectedCareCategory}.`}
+            </Text>
+          ) : (
+            <View style={{ gap: 6 }}>
+              {activeCareTips.map((tip) => (
+                <View
+                  key={tip}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    backgroundColor: colors.successSoft,
+                    borderWidth: 1,
+                    borderColor: colors.successBorder,
+                    borderRadius: radius.md,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontFamily: fonts.bodyRegular,
+                      fontSize: 12,
+                      color: colors.textPrimary,
+                      lineHeight: 17,
+                    }}
+                  >
+                    • {tip}
+                  </Text>
+                  {isOwner ? (
+                    <Pressable
+                      disabled={updateCareTipsMutation.isPending}
+                      onPress={() =>
+                        mutateCategoryCareTips(activeCareTips.filter((x) => x !== tip))
+                      }
+                      hitSlop={6}
+                    >
+                      <X size={14} color={colors.textMuted} />
                     </Pressable>
                   ) : null}
                 </View>

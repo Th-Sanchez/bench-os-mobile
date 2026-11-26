@@ -30,6 +30,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type { OrderPaymentMethod } from '@/types/api';
 import { shareDailyCashClosingPdf } from '@/utils/financeExport';
+import { formatTransactionDescription } from '@/utils/transactionDescription';
 
 const METHODS: OrderPaymentMethod[] = ['PIX', 'CASH', 'DEBIT_CARD', 'CREDIT_CARD'];
 
@@ -312,7 +313,7 @@ function DailyCashClosingBody({ onClose }: { onClose: () => void }) {
                       >
                         <View style={styles.txInfo}>
                           <Text style={styles.txDesc} numberOfLines={1}>
-                            {tx.description}
+                            {formatTransactionDescription(tx.description, locale)}
                           </Text>
                           <Text style={styles.txMeta}>
                             {formatHour(tx.paidAt ?? tx.createdAt)} ·{' '}
