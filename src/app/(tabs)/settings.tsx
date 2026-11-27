@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { type ComponentRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Linking,
   Pressable,
@@ -22,12 +23,15 @@ import * as ImagePicker from 'expo-image-picker';
 import {
   BookOpen,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   ImagePlus,
   Info,
   KeyRound,
   Lightbulb,
   LogOut,
+  MessageSquare,
   Package,
   PenTool,
   Plus,
@@ -36,7 +40,10 @@ import {
   RotateCcw,
   Settings,
   ShieldCheck,
+  Smartphone,
+  Store,
   Trash2,
+  Users,
   X,
 } from 'lucide-react-native';
 import { partsCatalogApi, tenantSettingsApi, usersApi } from '@/api/endpoints';
@@ -129,11 +136,30 @@ function getInitials(name: string): string {
   );
 }
 
+type SettingsSection = 'workshop' | 'operations' | 'team' | 'device';
+
 export default function SettingsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session, isOwner, signOut } = useAuth();
   const { locale, setLocale, t } = useI18n();
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const [activeSection, setActiveSection] = useState<SettingsSection | null>(null);
+
+  const openSection = (section: SettingsSection | null) => {
+    setActiveSection(section);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+
+  useEffect(() => {
+    if (activeSection === null) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setActiveSection(null);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeSection]);
   const {
     status: pushStatus,
     isBusy: isPushBusy,
@@ -735,10 +761,18 @@ export default function SettingsScreen() {
     );
   };
 
+  const sectionTitles: Record<SettingsSection, string> = {
+    workshop: locale === 'pt-BR' ? 'Oficina, Marca & Pix' : 'Workshop, Brand & Pix',
+    operations: locale === 'pt-BR' ? 'WhatsApp, Balcão & Catálogos' : 'WhatsApp & Catalogs',
+    team: locale === 'pt-BR' ? 'Equipe & Comissões' : 'Team & Commissions',
+    device: locale === 'pt-BR' ? 'Dispositivo & Preferências' : 'Device & Preferences',
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -753,24 +787,287 @@ export default function SettingsScreen() {
           />
         }
       >
-        {/* Top Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.shopName} numberOfLines={1}>
-              {(session?.tenant.name ?? 'BenchOS').toUpperCase()}
+        {/* Top Header or Sub-section Back Bar */}
+        {activeSection === null ? (
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.shopName} numberOfLines={1}>
+                {(session?.tenant.name ?? 'BenchOS').toUpperCase()}
+              </Text>
+              <Text style={styles.title}>{locale === 'pt-BR' ? 'Ajustes' : 'Settings'}</Text>
+            </View>
+            <View style={styles.headerRolePill}>
+              <Text style={styles.headerRoleText}>{t.role[userRole]}</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.subHeaderBar}>
+            <Pressable
+              onPress={() => openSection(null)}
+              hitSlop={8}
+              style={({ pressed }) => [styles.backPillBtn, pressed && { opacity: 0.7 }]}
+            >
+              <ChevronLeft size={16} color={colors.brandPrimary} strokeWidth={2.4} />
+              <Text style={styles.backPillText}>
+                {locale === 'pt-BR' ? 'Ajustes' : 'Settings'}
+              </Text>
+            </Pressable>
+            <Text style={styles.subHeaderTitle} numberOfLines={1}>
+              {sectionTitles[activeSection]}
             </Text>
-            <Text style={styles.title}>{locale === 'pt-BR' ? 'Ajustes' : 'Settings'}</Text>
           </View>
-          <View style={styles.headerRolePill}>
-            <Text style={styles.headerRoleText}>{t.role[userRole]}</Text>
-          </View>
-        </View>
+        )}
 
+        {/* ==================== MAIN SETTINGS MENU ==================== */}
+        {activeSection === null ? (
+          <>
+            {session?.user ? (
+              <View style={styles.card}>
+                <View style={styles.memberRow}>
+                  <View style={styles.memberLeft}>
+                    {renderAvatar(session.user)}
+                    <View style={styles.memberInfo}>
+                      <View style={styles.memberNameRow}>
+                        <Text style={styles.memberName} numberOfLines={1}>
+                          {session.user.name}
+                        </Text>
+                        {renderRoleBadge(session.user.role)}
+                      </View>
+                      <Text style={styles.memberEmail} numberOfLines={1}>
+                        {session.user.email}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Group 1: Oficina */}
+            <View style={styles.menuGroup}>
+              <Text style={styles.menuGroupLabel}>
+                {locale === 'pt-BR' ? 'CONFIGURAÇÕES DA OFICINA' : 'WORKSHOP SETTINGS'}
+              </Text>
+              <View style={styles.menuCard}>
+                <Pressable
+                  onPress={() => openSection('workshop')}
+                  style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+                >
+                  <View style={[styles.menuIconBox, { backgroundColor: colors.brandPrimarySoft }]}>
+                    <Store size={18} color={colors.brandPrimary} strokeWidth={2.1} />
+                  </View>
+                  <View style={styles.menuCopy}>
+                    <Text style={styles.menuTitle}>
+                      {locale === 'pt-BR' ? 'Oficina, Marca & Pix' : 'Workshop, Brand & Pix'}
+                    </Text>
+                    <Text style={styles.menuSubtitle} numberOfLines={1}>
+                      {locale === 'pt-BR'
+                        ? 'Logo, endereço, garantia, Pix, Google 5★ e prazos'
+                        : 'Logo, address, warranty, Pix, Google 5★ & SLAs'}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color={colors.textMuted} />
+                </Pressable>
+
+                <View style={styles.menuDivider} />
+
+                <Pressable
+                  onPress={() => openSection('operations')}
+                  style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+                >
+                  <View style={[styles.menuIconBox, { backgroundColor: colors.successSoft }]}>
+                    <MessageSquare size={18} color={colors.successDark} strokeWidth={2.1} />
+                  </View>
+                  <View style={styles.menuCopy}>
+                    <Text style={styles.menuTitle}>
+                      {locale === 'pt-BR'
+                        ? 'WhatsApp, Balcão & Catálogos'
+                        : 'WhatsApp, Desk & Catalogs'}
+                    </Text>
+                    <Text style={styles.menuSubtitle} numberOfLines={1}>
+                      {locale === 'pt-BR'
+                        ? 'Templates, aparelhos, checklist, dicas, assinatura e peças'
+                        : 'Templates, appliances, checklist, tips, signature & parts'}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color={colors.textMuted} />
+                </Pressable>
+
+                {isOwner ? (
+                  <>
+                    <View style={styles.menuDivider} />
+                    <Pressable
+                      onPress={() => openSection('team')}
+                      style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+                    >
+                      <View style={[styles.menuIconBox, { backgroundColor: colors.warningSoft }]}>
+                        <Users size={18} color={colors.warningDark} strokeWidth={2.1} />
+                      </View>
+                      <View style={styles.menuCopy}>
+                        <Text style={styles.menuTitle}>
+                          {locale === 'pt-BR' ? 'Equipe & Comissões' : 'Team & Commissions'}
+                        </Text>
+                        <Text style={styles.menuSubtitle} numberOfLines={1}>
+                          {locale === 'pt-BR'
+                            ? `${teamMembers.length || 1} operador(es) · Técnico responsável e senhas`
+                            : `${teamMembers.length || 1} operator(s) · Technician & passwords`}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color={colors.textMuted} />
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
+            </View>
+
+            {/* Group 2: Aplicativo */}
+            <View style={styles.menuGroup}>
+              <Text style={styles.menuGroupLabel}>
+                {locale === 'pt-BR' ? 'ESTE DISPOSITIVO' : 'THIS DEVICE'}
+              </Text>
+              <View style={styles.menuCard}>
+                <Pressable
+                  onPress={() => openSection('device')}
+                  style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+                >
+                  <View style={[styles.menuIconBox, { backgroundColor: colors.warningSoft }]}>
+                    <Smartphone size={18} color={colors.warningDark} strokeWidth={2.1} />
+                  </View>
+                  <View style={styles.menuCopy}>
+                    <Text style={styles.menuTitle}>
+                      {locale === 'pt-BR'
+                        ? 'Dispositivo, Etiquetas & Preferências'
+                        : 'Device, Labels & Preferences'}
+                    </Text>
+                    <Text style={styles.menuSubtitle} numberOfLines={1}>
+                      {locale === 'pt-BR'
+                        ? 'Etiquetas, leitor QR, push, modo offline e idioma'
+                        : 'Labels, QR scanner, push, offline cache & language'}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Group 3: Ajuda & Conta */}
+            <View style={styles.menuGroup}>
+              <Text style={styles.menuGroupLabel}>
+                {locale === 'pt-BR' ? 'AJUDA & CONTA' : 'HELP & ACCOUNT'}
+              </Text>
+              <View style={styles.card}>
+                <View style={styles.langRow}>
+                  <View style={styles.langCopy}>
+                    <View style={styles.printHeaderTitleRow}>
+                      <BookOpen size={14} color={colors.brandPrimary} strokeWidth={2.1} />
+                      <Text style={styles.langTitle}>
+                        {locale === 'pt-BR' ? 'Central Como Usar' : 'How to Use Guide'}
+                      </Text>
+                    </View>
+                    <Text style={styles.langSubtitle}>
+                      {locale === 'pt-BR'
+                        ? 'Guias rápidos de balcão, peças, Pix e etiquetas'
+                        : 'Quick guides for orders, parts, Pix, and labels'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      void Linking.openURL('https://benchos.app.br/como-usar');
+                    }}
+                    style={styles.pushActionBtn}
+                  >
+                    <Text style={styles.pushActionBtnText}>
+                      {locale === 'pt-BR' ? 'Abrir' : 'Open'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.logoutDivider} />
+
+                <View style={styles.langRow}>
+                  <View style={styles.langCopy}>
+                    <View style={styles.printHeaderTitleRow}>
+                      <ShieldCheck size={14} color={colors.textPrimary} strokeWidth={2.1} />
+                      <Text style={styles.langTitle}>
+                        {locale === 'pt-BR' ? 'Privacidade & Termos' : 'Privacy & Terms'}
+                      </Text>
+                    </View>
+                    <Text style={styles.langSubtitle}>
+                      {locale === 'pt-BR'
+                        ? 'Política de Privacidade (LGPD) em benchos.app.br'
+                        : 'Privacy Policy at benchos.app.br'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      void Linking.openURL('https://benchos.app.br/privacidade');
+                    }}
+                    style={styles.pushActionBtn}
+                  >
+                    <Text style={styles.pushActionBtnText}>
+                      {locale === 'pt-BR' ? 'Ver' : 'View'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.logoutDivider} />
+
+                <View style={styles.langRow}>
+                  <View style={styles.langCopy}>
+                    <View style={styles.printHeaderTitleRow}>
+                      <Trash2 size={14} color={colors.danger} strokeWidth={2.1} />
+                      <Text style={styles.langTitle}>
+                        {locale === 'pt-BR' ? 'Excluir conta e dados' : 'Delete account & data'}
+                      </Text>
+                    </View>
+                    <Text style={styles.langSubtitle}>
+                      {locale === 'pt-BR'
+                        ? 'Solicite a exclusão definitiva da conta e dos dados (LGPD)'
+                        : 'Request permanent account and data deletion'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      void Linking.openURL('https://benchos.app.br/excluir-conta');
+                    }}
+                    style={styles.pushActionBtn}
+                  >
+                    <Text style={styles.pushActionBtnText}>
+                      {locale === 'pt-BR' ? 'Abrir' : 'Open'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.logoutDivider} />
+
+                <Button
+                  label={locale === 'pt-BR' ? 'Sair da conta' : 'Sign out'}
+                  variant="dangerOutline"
+                  icon={<LogOut size={16} color={colors.danger} strokeWidth={2.2} />}
+                  onPress={handleSignOut}
+                />
+
+                <Text style={styles.appVersionFooter}>
+                  {`BenchOS ${getAppVersionLabel()}${
+                    isSentryConfigured()
+                      ? locale === 'pt-BR'
+                        ? ' · Monitoramento ativo'
+                        : ' · Monitoring active'
+                      : ''
+                  }`}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        {/* ==================== SECTION: WORKSHOP (Params, Pix, Google & Branding) ==================== */}
+        {activeSection === 'workshop' ? (
+          <>
         {/* Section 1: Parâmetros da Oficina */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardOverline}>
-              {locale === 'pt-BR' ? 'PARÂMETROS DA OFICINA' : 'WORKSHOP PARAMETERS'}
+              {locale === 'pt-BR' ? 'PARÂMETROS, PIX & GOOGLE 5★' : 'PARAMETERS, PIX & GOOGLE 5★'}
             </Text>
             <Settings size={16} color={colors.textMuted} strokeWidth={2} />
           </View>
@@ -944,123 +1241,6 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
-              {/* Digital Pickup Signature Toggle */}
-              <View style={styles.logoutDivider} />
-              <View style={styles.langRow}>
-                <View style={styles.langCopy}>
-                  <View style={styles.printHeaderTitleRow}>
-                    <PenTool size={14} color={colors.brandPrimary} strokeWidth={2.1} />
-                    <Text style={styles.langTitle}>
-                      {locale === 'pt-BR'
-                        ? 'Assinatura digital na retirada'
-                        : 'Digital pickup signature'}
-                    </Text>
-                  </View>
-                  <Text style={styles.langSubtitle}>
-                    {locale === 'pt-BR'
-                      ? 'Exibe o campo de assinatura na tela de entrega (app e web) para constar no comprovante e garantia'
-                      : 'Shows the signature pad on delivery screens (mobile & web) and embeds it in the warranty receipt'}
-                  </Text>
-                </View>
-                <Switch
-                  value={deliverySignatureEnabled}
-                  disabled={!isOwner}
-                  onValueChange={(nextValue) => setDeliverySignatureDraft(nextValue)}
-                  trackColor={{
-                    false: colors.borderStrong,
-                    true: colors.brandPrimary,
-                  }}
-                  thumbColor={colors.bgSurface}
-                />
-              </View>
-              <View style={styles.logoutDivider} />
-
-              {/* Optional Technician Assignment & Commissions Toggle */}
-              <View style={styles.langRow}>
-                <View style={styles.langCopy}>
-                  <Text style={styles.langTitle}>
-                    {locale === 'pt-BR'
-                      ? 'Técnico responsável e comissões (opcional)'
-                      : 'Assigned technician & commissions (optional)'}
-                  </Text>
-                  <Text style={styles.langSubtitle}>
-                    {locale === 'pt-BR'
-                      ? 'Ative em oficinas com equipe para atribuir técnico por aparelho e fechar comissões no Financeiro Web.'
-                      : 'Enable for multi-tech shops to assign items and close monthly commissions in Web Finance.'}
-                  </Text>
-                </View>
-                <Switch
-                  value={technicianAssignmentEnabled}
-                  disabled={!isOwner}
-                  onValueChange={(nextValue) => setTechnicianAssignmentDraft(nextValue)}
-                  trackColor={{
-                    false: colors.borderStrong,
-                    true: colors.brandPrimary,
-                  }}
-                  thumbColor={colors.bgSurface}
-                />
-              </View>
-              <View style={styles.logoutDivider} />
-
-              {/* 3-Stage WhatsApp Templates */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>
-                  {locale === 'pt-BR'
-                    ? 'Templates de WhatsApp (por etapa da OS)'
-                    : 'WhatsApp Templates (by order stage)'}
-                </Text>
-
-                <View style={styles.templateTabsRow}>
-                  {stageTabs.map((tab) => {
-                    const active = activeTemplateStage === tab.key;
-                    return (
-                      <Pressable
-                        key={tab.key}
-                        onPress={() => setActiveTemplateStage(tab.key)}
-                        style={[styles.templateTab, active && styles.templateTabActive]}
-                      >
-                        <Text
-                          style={[
-                            styles.templateTabText,
-                            active && styles.templateTabTextActive,
-                          ]}
-                        >
-                          {tab.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                <TextInput
-                  value={currentTemplateValue}
-                  onChangeText={setCurrentTemplateDraft}
-                  editable={isOwner}
-                  multiline
-                  textAlignVertical="top"
-                  style={[styles.textarea, !isOwner && styles.inputReadonly]}
-                />
-
-                <View style={styles.varChipsWrap}>
-                  {TEMPLATE_PLACEHOLDERS.map((pair) => {
-                    const displayVar = locale === 'pt-BR' ? pair.ptBr : pair.api;
-                    return (
-                      <Pressable
-                        key={pair.api}
-                        disabled={!isOwner}
-                        onPress={() => handleInsertVariable(displayVar)}
-                        style={({ pressed }) => [
-                          styles.varChip,
-                          pressed && isOwner && styles.varChipPressed,
-                        ]}
-                      >
-                        <Text style={styles.varChipText}>{displayVar}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
               {saveFeedback ? (
                 <View
                   style={[
@@ -1085,7 +1265,7 @@ export default function SettingsScreen() {
 
               {isOwner ? (
                 <Button
-                  label={locale === 'pt-BR' ? 'Salvar configurações' : 'Save settings'}
+                  label={locale === 'pt-BR' ? 'Salvar parâmetros e Pix' : 'Save parameters & Pix'}
                   icon={<Check size={16} color={colors.textOnDark} strokeWidth={2.4} />}
                   loading={updateSettingsMutation.isPending}
                   onPress={handleSaveSettings}
@@ -1293,6 +1473,182 @@ export default function SettingsScreen() {
             ) : null}
           </View>
         </View>
+          </>
+        ) : null}
+
+        {/* ==================== SECTION: OPERATIONS (WhatsApp, Signature, Parts & Catalogs) ==================== */}
+        {activeSection === 'operations' ? (
+          <>
+            {/* WhatsApp Templates & Pickup Signature Card */}
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={styles.printHeaderTitleRow}>
+                  <MessageSquare size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                  <Text style={styles.cardOverline}>
+                    {locale === 'pt-BR'
+                      ? 'MENSAGENS DE WHATSAPP & RETIRADA'
+                      : 'WHATSAPP TEMPLATES & PICKUP'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.formGap}>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>
+                    {locale === 'pt-BR'
+                      ? 'Templates de WhatsApp (por etapa da OS)'
+                      : 'WhatsApp Templates (by order stage)'}
+                  </Text>
+
+                  <View style={styles.templateTabsRow}>
+                    {stageTabs.map((tab) => {
+                      const active = activeTemplateStage === tab.key;
+                      return (
+                        <Pressable
+                          key={tab.key}
+                          onPress={() => setActiveTemplateStage(tab.key)}
+                          style={[styles.templateTab, active && styles.templateTabActive]}
+                        >
+                          <Text
+                            style={[
+                              styles.templateTabText,
+                              active && styles.templateTabTextActive,
+                            ]}
+                          >
+                            {tab.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <TextInput
+                    value={currentTemplateValue}
+                    onChangeText={setCurrentTemplateDraft}
+                    editable={isOwner}
+                    multiline
+                    textAlignVertical="top"
+                    style={[styles.textarea, !isOwner && styles.inputReadonly]}
+                  />
+
+                  <View style={styles.varChipsWrap}>
+                    {TEMPLATE_PLACEHOLDERS.map((pair) => {
+                      const displayVar = locale === 'pt-BR' ? pair.ptBr : pair.api;
+                      return (
+                        <Pressable
+                          key={pair.api}
+                          disabled={!isOwner}
+                          onPress={() => handleInsertVariable(displayVar)}
+                          style={({ pressed }) => [
+                            styles.varChip,
+                            pressed && isOwner && styles.varChipPressed,
+                          ]}
+                        >
+                          <Text style={styles.varChipText}>{displayVar}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.logoutDivider} />
+
+                <View style={styles.langRow}>
+                  <View style={styles.langCopy}>
+                    <View style={styles.printHeaderTitleRow}>
+                      <PenTool size={14} color={colors.brandPrimary} strokeWidth={2.1} />
+                      <Text style={styles.langTitle}>
+                        {locale === 'pt-BR'
+                          ? 'Assinatura digital na retirada'
+                          : 'Digital pickup signature'}
+                      </Text>
+                    </View>
+                    <Text style={styles.langSubtitle}>
+                      {locale === 'pt-BR'
+                        ? 'Exibe o campo de assinatura na entrega para constar no comprovante'
+                        : 'Shows the signature pad on delivery screens for warranty receipts'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={deliverySignatureEnabled}
+                    disabled={!isOwner}
+                    onValueChange={(nextValue) => setDeliverySignatureDraft(nextValue)}
+                    trackColor={{
+                      false: colors.borderStrong,
+                      true: colors.brandPrimary,
+                    }}
+                    thumbColor={colors.bgSurface}
+                  />
+                </View>
+
+                {saveFeedback ? (
+                  <View
+                    style={[
+                      styles.feedbackBox,
+                      saveFeedback.type === 'success'
+                        ? styles.feedbackSuccess
+                        : styles.feedbackError,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.feedbackText,
+                        saveFeedback.type === 'success'
+                          ? styles.feedbackTextSuccess
+                          : styles.feedbackTextError,
+                      ]}
+                    >
+                      {saveFeedback.text}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {isOwner ? (
+                  <Button
+                    label={locale === 'pt-BR' ? 'Salvar mensagens e retirada' : 'Save messages & pickup'}
+                    icon={<Check size={16} color={colors.textOnDark} strokeWidth={2.4} />}
+                    loading={updateSettingsMutation.isPending}
+                    onPress={handleSaveSettings}
+                  />
+                ) : null}
+              </View>
+            </View>
+
+            {/* Catálogo de Peças Comuns (OWNER & TECHNICIAN) */}
+            {canManagePartsCatalog ? (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.printHeaderTitleRow}>
+                    <Package size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                    <Text style={styles.cardOverline}>
+                      {locale === 'pt-BR' ? 'CATÁLOGO DE PEÇAS COMUNS' : 'COMMON PARTS CATALOG'}
+                    </Text>
+                  </View>
+                  <Text style={styles.printModeBadge}>
+                    {partsCatalogQuery.isLoading
+                      ? '...'
+                      : `${partsCatalogQuery.data?.length ?? 0}`}
+                  </Text>
+                </View>
+
+                <Text style={styles.langSubtitle}>
+                  {locale === 'pt-BR'
+                    ? 'Peças frequentes com custo médio e valor de repasse para orçar em 1 toque.'
+                    : 'Common parts with average cost and suggested price for 1-tap quoting.'}
+                </Text>
+
+                <Button
+                  label={
+                    locale === 'pt-BR'
+                      ? 'Gerenciar catálogo de peças'
+                      : 'Manage parts catalog'
+                  }
+                  variant="secondary"
+                  icon={<Package size={15} color={colors.textPrimary} />}
+                  onPress={() => setPartsCatalogModalOpen(true)}
+                />
+              </View>
+            ) : null}
 
         {/* Custom Appliance Types Card */}
         <View style={styles.card}>
@@ -1645,9 +2001,79 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+          </>
+        ) : null}
 
-        {/* Section 2: Equipe da Oficina (OWNER) or Current Operator Card */}
-        {isOwner ? (
+        {/* ==================== SECTION: TEAM & COMMISSIONS (OWNER) ==================== */}
+        {activeSection === 'team' && isOwner ? (
+          <>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={styles.printHeaderTitleRow}>
+                  <Users size={14} color={colors.brandPrimary} strokeWidth={2.2} />
+                  <Text style={styles.cardOverline}>
+                    {locale === 'pt-BR' ? 'TÉCNICO RESPONSÁVEL & COMISSÕES' : 'TECHNICIANS & COMMISSIONS'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.formGap}>
+                <View style={styles.langRow}>
+                  <View style={styles.langCopy}>
+                    <Text style={styles.langTitle}>
+                      {locale === 'pt-BR'
+                        ? 'Ativar técnico responsável e comissões'
+                        : 'Enable assigned technician & commissions'}
+                    </Text>
+                    <Text style={styles.langSubtitle}>
+                      {locale === 'pt-BR'
+                        ? 'Permite atribuir um técnico por aparelho e fechar comissões mensais no Financeiro Web.'
+                        : 'Allows assigning a technician per item and closing commissions in Web Finance.'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={technicianAssignmentEnabled}
+                    onValueChange={(nextValue) => setTechnicianAssignmentDraft(nextValue)}
+                    trackColor={{
+                      false: colors.borderStrong,
+                      true: colors.brandPrimary,
+                    }}
+                    thumbColor={colors.bgSurface}
+                  />
+                </View>
+
+                {saveFeedback ? (
+                  <View
+                    style={[
+                      styles.feedbackBox,
+                      saveFeedback.type === 'success'
+                        ? styles.feedbackSuccess
+                        : styles.feedbackError,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.feedbackText,
+                        saveFeedback.type === 'success'
+                          ? styles.feedbackTextSuccess
+                          : styles.feedbackTextError,
+                      ]}
+                    >
+                      {saveFeedback.text}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Button
+                  label={locale === 'pt-BR' ? 'Salvar preferência de equipe' : 'Save team preference'}
+                  icon={<Check size={16} color={colors.textOnDark} strokeWidth={2.4} />}
+                  loading={updateSettingsMutation.isPending}
+                  onPress={handleSaveSettings}
+                />
+              </View>
+            </View>
+
+        {/* Section 2: Equipe da Oficina (OWNER) */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardOverline}>
@@ -1735,74 +2161,12 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        ) : session?.user ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardOverline}>
-                {locale === 'pt-BR' ? 'OPERADOR CONECTADO' : 'SIGNED-IN OPERATOR'}
-              </Text>
-            </View>
-            <View style={styles.memberRow}>
-              <View style={styles.memberLeft}>
-                {renderAvatar(session.user)}
-                <View style={styles.memberInfo}>
-                  <View style={styles.memberNameRow}>
-                    <Text style={styles.memberName} numberOfLines={1}>
-                      {session.user.name}
-                    </Text>
-                    {renderRoleBadge(session.user.role)}
-                  </View>
-                  <Text style={styles.memberEmail} numberOfLines={1}>
-                    {session.user.email}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.activePill}>
-                <View style={styles.activeDot} />
-                <Text style={styles.activePillText}>
-                  {locale === 'pt-BR' ? 'Ativo' : 'Active'}
-                </Text>
-              </View>
-            </View>
-          </View>
+          </>
         ) : null}
 
-        {/* Section 2.4: Catálogo de Peças Comuns (OWNER & TECHNICIAN) */}
-        {canManagePartsCatalog ? (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.printHeaderTitleRow}>
-                <Package size={14} color={colors.brandPrimary} strokeWidth={2.2} />
-                <Text style={styles.cardOverline}>
-                  {locale === 'pt-BR' ? 'CATÁLOGO DE PEÇAS COMUNS' : 'COMMON PARTS CATALOG'}
-                </Text>
-              </View>
-              <Text style={styles.printModeBadge}>
-                {partsCatalogQuery.isLoading
-                  ? '...'
-                  : `${partsCatalogQuery.data?.length ?? 0}`}
-              </Text>
-            </View>
-
-            <Text style={styles.langSubtitle}>
-              {locale === 'pt-BR'
-                ? 'Cadastre peças frequentes (magnetron, fusível, capacitor, resistência) com custo médio e valor de repasse para orçar em 1 toque e calcular a margem real.'
-                : 'Register common parts with average cost and suggested price for 1-tap quoting and real margin tracking.'}
-            </Text>
-
-            <Button
-              label={
-                locale === 'pt-BR'
-                  ? 'Gerenciar catálogo de peças'
-                  : 'Manage parts catalog'
-              }
-              variant="secondary"
-              icon={<Package size={15} color={colors.textPrimary} />}
-              onPress={() => setPartsCatalogModalOpen(true)}
-            />
-          </View>
-        ) : null}
-
+        {/* ==================== SECTION: DEVICE, LABELS & PREFERENCES ==================== */}
+        {activeSection === 'device' ? (
+          <>
         {/* Section 2.5: Etiquetas & Impressão (Per-device configurable) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -2110,110 +2474,9 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
           </View>
-
-          <View style={styles.logoutDivider} />
-
-          <View style={styles.langRow}>
-            <View style={styles.langCopy}>
-              <View style={styles.printHeaderTitleRow}>
-                <BookOpen size={14} color={colors.brandPrimary} strokeWidth={2.1} />
-                <Text style={styles.langTitle}>
-                  {locale === 'pt-BR' ? 'Central Como Usar' : 'How to Use Guide'}
-                </Text>
-              </View>
-              <Text style={styles.langSubtitle}>
-                {locale === 'pt-BR'
-                  ? 'Guias rápidos de balcão, peças, Pix e etiquetas'
-                  : 'Quick guides for orders, parts, Pix, and labels'}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => {
-                void Linking.openURL('https://benchos.app.br/como-usar');
-              }}
-              style={styles.pushActionBtn}
-            >
-              <Text style={styles.pushActionBtnText}>
-                {locale === 'pt-BR' ? 'Abrir' : 'Open'}
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.logoutDivider} />
-
-          <View style={styles.langRow}>
-            <View style={styles.langCopy}>
-              <View style={styles.printHeaderTitleRow}>
-                <ShieldCheck size={14} color={colors.textPrimary} strokeWidth={2.1} />
-                <Text style={styles.langTitle}>
-                  {locale === 'pt-BR' ? 'Privacidade & Termos' : 'Privacy & Terms'}
-                </Text>
-              </View>
-              <Text style={styles.langSubtitle}>
-                {locale === 'pt-BR'
-                  ? 'Política de Privacidade (LGPD) em benchos.app.br'
-                  : 'Privacy Policy at benchos.app.br'}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => {
-                void Linking.openURL('https://benchos.app.br/privacidade');
-              }}
-              style={styles.pushActionBtn}
-            >
-              <Text style={styles.pushActionBtnText}>
-                {locale === 'pt-BR' ? 'Ver' : 'View'}
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.logoutDivider} />
-
-          <View style={styles.langRow}>
-            <View style={styles.langCopy}>
-              <View style={styles.printHeaderTitleRow}>
-                <Trash2 size={14} color={colors.danger} strokeWidth={2.1} />
-                <Text style={styles.langTitle}>
-                  {locale === 'pt-BR' ? 'Excluir conta e dados' : 'Delete account & data'}
-                </Text>
-              </View>
-              <Text style={styles.langSubtitle}>
-                {locale === 'pt-BR'
-                  ? 'Solicite a exclusão definitiva da conta e dos dados (LGPD)'
-                  : 'Request permanent account and data deletion'}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => {
-                void Linking.openURL('https://benchos.app.br/excluir-conta');
-              }}
-              style={styles.pushActionBtn}
-            >
-              <Text style={styles.pushActionBtnText}>
-                {locale === 'pt-BR' ? 'Abrir' : 'Open'}
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.logoutDivider} />
-
-          <Button
-            label={locale === 'pt-BR' ? 'Sair da conta' : 'Sign out'}
-            variant="dangerOutline"
-            icon={<LogOut size={16} color={colors.danger} strokeWidth={2.2} />}
-            onPress={handleSignOut}
-          />
-
-          <Text style={styles.appVersionFooter}>
-            {`BenchOS ${getAppVersionLabel()}${
-              isSentryConfigured()
-                ? locale === 'pt-BR'
-                  ? ' · Monitoramento ativo'
-                  : ' · Monitoring active'
-                : ''
-            }`}
-          </Text>
         </View>
+          </>
+        ) : null}
       </ScrollView>
       </KeyboardAvoidingView>
 
@@ -2787,5 +3050,87 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
     textAlign: 'center',
+  },
+  subHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingBottom: 2,
+  },
+  backPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimarySoft,
+    borderWidth: 1,
+    borderColor: colors.brandPrimaryBorder,
+  },
+  backPillText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.brandPrimary,
+  },
+  subHeaderTitle: {
+    flex: 1,
+    fontFamily: fonts.headlineBold,
+    fontSize: 18,
+    color: colors.textPrimary,
+  },
+  menuGroup: {
+    gap: 8,
+  },
+  menuGroupLabel: {
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 0.7,
+    color: colors.textMuted,
+    paddingHorizontal: 4,
+  },
+  menuCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    overflow: 'hidden',
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  menuRowPressed: {
+    backgroundColor: colors.bgCanvas,
+  },
+  menuIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  menuTitle: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  menuSubtitle: {
+    fontFamily: fonts.bodyRegular,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: colors.bgSubtle,
+    marginLeft: 64,
   },
 });
