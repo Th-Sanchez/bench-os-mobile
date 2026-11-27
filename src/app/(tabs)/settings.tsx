@@ -2169,6 +2169,34 @@ export default function SettingsScreen() {
 
           <View style={styles.logoutDivider} />
 
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <View style={styles.printHeaderTitleRow}>
+                <Trash2 size={14} color={colors.danger} strokeWidth={2.1} />
+                <Text style={styles.langTitle}>
+                  {locale === 'pt-BR' ? 'Excluir conta e dados' : 'Delete account & data'}
+                </Text>
+              </View>
+              <Text style={styles.langSubtitle}>
+                {locale === 'pt-BR'
+                  ? 'Solicite a exclusão definitiva da conta e dos dados (LGPD)'
+                  : 'Request permanent account and data deletion'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                void Linking.openURL('https://benchos.app.br/excluir-conta');
+              }}
+              style={styles.pushActionBtn}
+            >
+              <Text style={styles.pushActionBtnText}>
+                {locale === 'pt-BR' ? 'Abrir' : 'Open'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.logoutDivider} />
+
           <Button
             label={locale === 'pt-BR' ? 'Sair da conta' : 'Sign out'}
             variant="dangerOutline"
