@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Linking,
@@ -19,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {
   Camera,
   Check,
+  ChevronDown,
   ClipboardCheck,
   Pencil,
   PlusCircle,
@@ -32,6 +32,7 @@ import { customersApi, ordersApi, tenantSettingsApi } from '@/api/endpoints';
 import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { CustomerFormModal } from '@/components/customers/CustomerFormModal';
+import { ApplianceTypePickerModal } from '@/components/orders/ApplianceTypePickerModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { TagBadge } from '@/components/ui/TagBadge';
@@ -66,7 +67,7 @@ interface DraftApplianceItem {
 function createEmptyItem(): DraftApplianceItem {
   return {
     localId: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    applianceType: 'Micro-ondas',
+    applianceType: '',
     customType: '',
     brand: '',
     model: '',
@@ -114,8 +115,7 @@ export default function NewOrderScreen() {
   const [expandedIndex, setExpandedIndex] = useState<number>(0);
   const [orderNotes, setOrderNotes] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [addingTypeForIndex, setAddingTypeForIndex] = useState<number | null>(null);
-  const [newApplianceTypeInput, setNewApplianceTypeInput] = useState('');
+  const [pickerForIndex, setPickerForIndex] = useState<number | null>(null);
 
   const settingsQuery = useQuery({
     queryKey: ['tenant-settings'],
@@ -126,18 +126,21 @@ export default function NewOrderScreen() {
     const custom = settingsQuery.data?.customApplianceTypes ?? [];
     const seen = new Set(DEFAULT_APPLIANCE_TYPES.map((t) => t.toLowerCase()));
     const extras = custom.filter((c) => !seen.has(c.toLowerCase()));
-    return [...DEFAULT_APPLIANCE_TYPES, ...extras, 'Outro'];
+    return [...DEFAULT_APPLIANCE_TYPES, ...extras];
   }, [settingsQuery.data?.customApplianceTypes]);
 
   const addApplianceTypeMutation = useMutation({
     mutationFn: (name: string) => tenantSettingsApi.addApplianceType(name),
     onSuccess: (updated, savedName) => {
       queryClient.setQueryData(['tenant-settings'], updated);
-      if (addingTypeForIndex !== null) {
-        updateItem(addingTypeForIndex, { applianceType: savedName.trim(), customType: '' });
+      if (pickerForIndex !== null) {
+        updateItem(pickerForIndex, {
+          applianceType: savedName.trim(),
+          customType: '',
+          checkedLabels: [],
+        });
       }
-      setNewApplianceTypeInput('');
-      setAddingTypeForIndex(null);
+      setPickerForIndex(null);
     },
     onError: (err) => {
       Alert.alert(
@@ -146,12 +149,6 @@ export default function NewOrderScreen() {
       );
     },
   });
-
-  const handleSaveNewApplianceType = () => {
-    const trimmed = newApplianceTypeInput.trim();
-    if (!trimmed) return;
-    addApplianceTypeMutation.mutate(trimmed);
-  };
 
   const customersQuery = useQuery({
     queryKey: ['customers', customerSearch.trim()],
@@ -594,95 +591,49 @@ export default function NewOrderScreen() {
                   ) : null}
                 </View>
 
-                {/* Appliance Type Quick Chips */}
+                {/* Appliance Type Selector */}
                 <View style={styles.fieldGroup}>
                   <View style={styles.labelRowBetween}>
                     <Text style={styles.monoLabel}>
-                      {locale === 'pt-BR' ? 'Tipo de aparelho' : 'Appliance type'}
+                      {locale === 'pt-BR' ? 'Tipo de aparelho *' : 'Appliance type *'}
                     </Text>
-                    <Pressable
-                      onPress={() => {
-                        setAddingTypeForIndex((prev) => (prev === index ? null : index));
-                        setNewApplianceTypeInput('');
-                      }}
-                      hitSlop={8}
-                    >
-                      <Text style={styles.addTypeLink}>
-                        {addingTypeForIndex === index
-                          ? t.common.cancel
-                          : locale === 'pt-BR'
-                            ? '+ Novo tipo'
-                            : '+ New type'}
-                      </Text>
-                    </Pressable>
+                    <Text style={styles.requiredTag}>{t.common.required}</Text>
                   </View>
 
-                  {addingTypeForIndex === index ? (
-                    <View style={styles.addTypeRow}>
-                      <TextInput
-                        value={newApplianceTypeInput}
-                        onChangeText={setNewApplianceTypeInput}
-                        placeholder={
-                          locale === 'pt-BR'
-                            ? 'Ex: Máquina de Café, Parafusadeira...'
-                            : 'e.g. Espresso Machine...'
-                        }
-                        placeholderTextColor={colors.textMuted}
-                        style={[styles.filledInput, styles.addTypeInput]}
-                        returnKeyType="done"
-                        onSubmitEditing={handleSaveNewApplianceType}
-                      />
-                      <Pressable
-                        disabled={
-                          addApplianceTypeMutation.isPending || !newApplianceTypeInput.trim()
-                        }
-                        onPress={handleSaveNewApplianceType}
-                        style={[
-                          styles.addTypeSaveBtn,
-                          (!newApplianceTypeInput.trim() ||
-                            addApplianceTypeMutation.isPending) &&
-                            styles.addTypeSaveBtnDisabled,
-                        ]}
-                      >
-                        {addApplianceTypeMutation.isPending ? (
-                          <ActivityIndicator size="small" color={colors.textOnDark} />
-                        ) : (
-                          <Text style={styles.addTypeSaveText}>
-                            {locale === 'pt-BR' ? 'Adicionar' : 'Add'}
-                          </Text>
-                        )}
-                      </Pressable>
-                    </View>
-                  ) : null}
-
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.typeChipsRow}
+                  <Pressable
+                    onPress={() => setPickerForIndex(index)}
+                    style={({ pressed }) => [
+                      styles.selectTrigger,
+                      pressed && styles.selectTriggerPressed,
+                    ]}
                   >
-                    {applianceTypeOptions.map((typeOption) => {
-                      const active = item.applianceType === typeOption;
-                      return (
-                        <Pressable
-                          key={typeOption}
-                          onPress={() =>
-                            updateItem(index, { applianceType: typeOption, checkedLabels: [] })
-                          }
-                          style={[styles.typeChip, active && styles.typeChipActive]}
-                        >
-                          <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
-                            {typeOption}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
+                    <Text
+                      style={[
+                        styles.selectTriggerText,
+                        !item.applianceType && styles.selectTriggerPlaceholder,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.applianceType === 'Outro'
+                        ? locale === 'pt-BR'
+                          ? 'Outro (digitar manualmente)'
+                          : 'Other (type manually)'
+                        : item.applianceType ||
+                          (locale === 'pt-BR'
+                            ? 'Selecione o tipo de aparelho...'
+                            : 'Select appliance type...')}
+                    </Text>
+                    <ChevronDown size={18} color={colors.textSecondary} />
+                  </Pressable>
+
                   {item.applianceType === 'Outro' ? (
                     <TextInput
                       value={item.customType}
                       onChangeText={(val) => updateItem(index, { customType: val })}
                       placeholder={
-                        locale === 'pt-BR' ? 'Ex: Cafeteira, Ferro de passar...' : 'e.g. Coffee Maker...'
+                        locale === 'pt-BR'
+                          ? 'Ex: Cafeteira, Ferro de passar...'
+                          : 'e.g. Coffee Maker...'
                       }
                       placeholderTextColor={colors.textMuted}
                       style={styles.filledInput}
@@ -949,6 +900,24 @@ export default function NewOrderScreen() {
         onClose={() => setNewCustomerModalOpen(false)}
         onSaved={handleCustomerCreated}
       />
+
+      <ApplianceTypePickerModal
+        visible={pickerForIndex !== null}
+        selectedValue={pickerForIndex !== null ? (items[pickerForIndex]?.applianceType ?? '') : ''}
+        options={applianceTypeOptions}
+        onSelect={(typeOption) => {
+          if (pickerForIndex !== null) {
+            updateItem(pickerForIndex, {
+              applianceType: typeOption,
+              customType: typeOption === 'Outro' ? items[pickerForIndex]?.customType ?? '' : '',
+              checkedLabels: [],
+            });
+          }
+        }}
+        onCreateNew={(name) => addApplianceTypeMutation.mutate(name)}
+        isCreating={addApplianceTypeMutation.isPending}
+        onClose={() => setPickerForIndex(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -1197,55 +1166,32 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: colors.warningDark,
   },
-  typeChipsRow: {
-    gap: 8,
-  },
-  addTypeLink: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 12,
-    color: colors.brandPrimary,
-  },
-  addTypeRow: {
+  selectTrigger: {
+    minHeight: 46,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
-    marginBottom: 4,
-  },
-  addTypeInput: {
-    flex: 1,
-  },
-  addTypeSaveBtn: {
-    minHeight: 44,
-    paddingHorizontal: 14,
-    borderRadius: radius.md,
-    backgroundColor: colors.brandPrimary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addTypeSaveBtnDisabled: {
-    opacity: 0.5,
-  },
-  addTypeSaveText: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 13,
-    color: colors.textOnDark,
-  },
-  typeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.md,
     backgroundColor: '#F2F5FF',
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  typeChipActive: {
-    backgroundColor: colors.brandPrimary,
+  selectTriggerPressed: {
+    borderColor: colors.brandPrimary,
+    backgroundColor: colors.brandPrimarySoft,
   },
-  typeChipText: {
+  selectTriggerText: {
+    flex: 1,
     fontFamily: fonts.bodyMedium,
-    fontSize: 12.5,
-    color: colors.textSecondary,
+    fontSize: 14,
+    color: colors.textPrimary,
   },
-  typeChipTextActive: {
-    color: colors.textOnDark,
+  selectTriggerPlaceholder: {
+    fontFamily: fonts.bodyRegular,
+    color: colors.textMuted,
   },
   twoColRow: {
     flexDirection: 'row',
