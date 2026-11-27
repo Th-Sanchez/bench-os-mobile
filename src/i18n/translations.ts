@@ -43,7 +43,7 @@ export const translations = {
       registerCta: 'Criar minha oficina',
       newHere: 'Novo por aqui?',
       registerPrompt: 'Cadastrar minha oficina grátis',
-      footerNote: 'Isolamento seguro multi-oficina · BenchOS v1',
+      footerNote: 'BenchOS · Gestão para assistências técnicas de bancada',
     },
     status: {
       RECEIVED: 'Recebido',
@@ -129,7 +129,7 @@ export const translations = {
       registerCta: 'Create my shop',
       newHere: 'New here?',
       registerPrompt: 'Register my shop for free',
-      footerNote: 'Strict multi-tenant isolation · BenchOS v1',
+      footerNote: 'BenchOS · Repair shop workbench management',
     },
     status: {
       RECEIVED: 'Received',

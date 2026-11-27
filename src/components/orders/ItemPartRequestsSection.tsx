@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Linking,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -31,6 +31,7 @@ import { ApiError } from '@/api/http';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useI18n } from '@/i18n/I18nProvider';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import type {
@@ -121,6 +122,8 @@ function PartRequestFormMobileModalContent({
 }: PartRequestFormModalProps) {
   const { locale, t, formatCurrency } = useI18n();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
 
   const [partCatalogId, setPartCatalogId] = useState<string | null>(
     () => editing?.partCatalogId ?? null
@@ -211,9 +214,18 @@ function PartRequestFormMobileModalContent({
 
   return (
       <KeyboardAvoidingView
-        style={styles.modalBackdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[
+          styles.modalBackdrop,
+          { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) },
+        ]}
+        behavior="padding"
       >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+        />
         <View style={styles.modalSheet}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
@@ -230,7 +242,13 @@ function PartRequestFormMobileModalContent({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalBody}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets
+          >
             {!editing && sortedCatalog.length > 0 ? (
               <View style={styles.fieldBlock}>
                 <Text style={styles.fieldLabel}>
@@ -388,7 +406,16 @@ function PartRequestFormMobileModalContent({
             ) : null}
           </ScrollView>
 
-          <View style={styles.modalFooter}>
+          <View
+            style={[
+              styles.modalFooter,
+              {
+                paddingBottom: isKeyboardVisible
+                  ? spacing.md
+                  : Math.max(insets.bottom + spacing.md, spacing.xl),
+              },
+            ]}
+          >
             <Button
               label={t.common.cancel}
               variant="secondary"
@@ -440,6 +467,8 @@ function ArrivePartRequestMobileModalContent({
   const { locale, t, formatCurrency } = useI18n();
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
   const isOwner = session?.user.role === 'OWNER';
 
   const baseUnit = request.actualUnitCost ?? request.estimatedUnitCost;
@@ -493,9 +522,18 @@ function ArrivePartRequestMobileModalContent({
 
   return (
       <KeyboardAvoidingView
-        style={styles.modalBackdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[
+          styles.modalBackdrop,
+          { paddingTop: Math.max(insets.top + spacing.sm, spacing.lg) },
+        ]}
+        behavior="padding"
       >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+        />
         <View style={styles.modalSheet}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
@@ -507,7 +545,13 @@ function ArrivePartRequestMobileModalContent({
           </View>
 
           {request ? (
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalBody}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets
+            >
               <View style={styles.summaryStrip}>
                 <Text style={styles.summaryPartName}>
                   {request.quantity > 1 ? `${request.quantity}x ` : ''}
@@ -627,7 +671,16 @@ function ArrivePartRequestMobileModalContent({
             </ScrollView>
           ) : null}
 
-          <View style={styles.modalFooter}>
+          <View
+            style={[
+              styles.modalFooter,
+              {
+                paddingBottom: isKeyboardVisible
+                  ? spacing.md
+                  : Math.max(insets.bottom + spacing.md, spacing.xl),
+              },
+            ]}
+          >
             <Button
               label={t.common.cancel}
               variant="secondary"
@@ -659,8 +712,13 @@ export function ItemPartRequestsSection({ orderId, item }: ItemPartRequestsSecti
   const queryClient = useQueryClient();
 
   const canWrite = session?.user.role === 'OWNER' || session?.user.role === 'TECHNICIAN';
+  const isPreApproval =
+    item.status === 'RECEIVED' || item.status === 'DIAGNOSING' || item.status === 'QUOTE_SENT';
   const isTerminal =
-    item.status === 'DELIVERED' || item.status === 'DISCARDED' || item.status === 'CANCELLED';
+    item.status === 'REJECTED' ||
+    item.status === 'DELIVERED' ||
+    item.status === 'DISCARDED' ||
+    item.status === 'CANCELLED';
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PartRequestResponse | null>(null);
@@ -669,6 +727,7 @@ export function ItemPartRequestsSection({ orderId, item }: ItemPartRequestsSecti
   const requestsQuery = useQuery({
     queryKey: ['item-part-requests', orderId, item.id],
     queryFn: () => partRequestsApi.listForItem(orderId, item.id),
+    enabled: !isPreApproval,
   });
 
   const invalidate = () =>
@@ -716,6 +775,10 @@ export function ItemPartRequestsSection({ orderId, item }: ItemPartRequestsSecti
 
   const list = requestsQuery.data ?? [];
   const pendingCount = list.filter((r) => r.status === 'TO_ORDER' || r.status === 'ORDERED').length;
+
+  if (isPreApproval || (isTerminal && !requestsQuery.isLoading && list.length === 0)) {
+    return null;
+  }
 
   return (
     <>
@@ -1071,7 +1134,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSurface,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
-    maxHeight: '90%',
+    maxHeight: '92%',
+    flexShrink: 1,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1089,12 +1153,15 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     padding: spacing.lg,
+    paddingBottom: spacing.xl,
     gap: spacing.md,
   },
   modalFooter: {
     flexDirection: 'row',
     gap: spacing.sm,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
   },

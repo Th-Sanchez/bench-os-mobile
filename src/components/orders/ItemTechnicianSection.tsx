@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronRight, User, Wrench, X } from 'lucide-react-native';
 import { ordersApi, tenantSettingsApi, usersApi } from '@/api/endpoints';
@@ -27,6 +28,7 @@ export function ItemTechnicianSection({ orderId, item }: ItemTechnicianSectionPr
   const { locale, t, formatCurrency } = useI18n();
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const settingsQuery = useQuery({
@@ -110,7 +112,18 @@ export function ItemTechnicianSection({ orderId, item }: ItemTechnicianSectionPr
         onRequestClose={() => setPickerOpen(false)}
       >
         <View style={styles.backdrop}>
-          <View style={styles.sheet}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setPickerOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={locale === 'pt-BR' ? 'Fechar' : 'Close'}
+          />
+          <View
+            style={[
+              styles.sheet,
+              { paddingBottom: Math.max(insets.bottom + spacing.md, spacing.xl) },
+            ]}
+          >
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>
                 {locale === 'pt-BR' ? 'Escolher Técnico' : 'Assign Technician'}
