@@ -712,9 +712,13 @@ export function ItemPartRequestsSection({ orderId, item }: ItemPartRequestsSecti
   const queryClient = useQueryClient();
 
   const canWrite = session?.user.role === 'OWNER' || session?.user.role === 'TECHNICIAN';
-  const isPreDiagnosis = item.status === 'RECEIVED';
+  const isPreApproval =
+    item.status === 'RECEIVED' || item.status === 'DIAGNOSING' || item.status === 'QUOTE_SENT';
   const isTerminal =
-    item.status === 'DELIVERED' || item.status === 'DISCARDED' || item.status === 'CANCELLED';
+    item.status === 'REJECTED' ||
+    item.status === 'DELIVERED' ||
+    item.status === 'DISCARDED' ||
+    item.status === 'CANCELLED';
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PartRequestResponse | null>(null);
@@ -723,7 +727,7 @@ export function ItemPartRequestsSection({ orderId, item }: ItemPartRequestsSecti
   const requestsQuery = useQuery({
     queryKey: ['item-part-requests', orderId, item.id],
     queryFn: () => partRequestsApi.listForItem(orderId, item.id),
-    enabled: !isPreDiagnosis,
+    enabled: !isPreApproval,
   });
 
   const invalidate = () =>
@@ -772,7 +776,7 @@ export function ItemPartRequestsSection({ orderId, item }: ItemPartRequestsSecti
   const list = requestsQuery.data ?? [];
   const pendingCount = list.filter((r) => r.status === 'TO_ORDER' || r.status === 'ORDERED').length;
 
-  if (isPreDiagnosis || (isTerminal && !requestsQuery.isLoading && list.length === 0)) {
+  if (isPreApproval || (isTerminal && !requestsQuery.isLoading && list.length === 0)) {
     return null;
   }
 
