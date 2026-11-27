@@ -20,6 +20,7 @@ import { Image } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import {
+  BookOpen,
   Check,
   ClipboardCheck,
   ImagePlus,
@@ -34,6 +35,7 @@ import {
   QrCode,
   RotateCcw,
   Settings,
+  ShieldCheck,
   Trash2,
   X,
 } from 'lucide-react-native';
@@ -2107,6 +2109,90 @@ export default function SettingsScreen() {
                 </Text>
               </Pressable>
             </View>
+          </View>
+
+          <View style={styles.logoutDivider} />
+
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <View style={styles.printHeaderTitleRow}>
+                <BookOpen size={14} color={colors.brandPrimary} strokeWidth={2.1} />
+                <Text style={styles.langTitle}>
+                  {locale === 'pt-BR' ? 'Central Como Usar' : 'How to Use Guide'}
+                </Text>
+              </View>
+              <Text style={styles.langSubtitle}>
+                {locale === 'pt-BR'
+                  ? 'Guias rápidos de balcão, peças, Pix e etiquetas'
+                  : 'Quick guides for orders, parts, Pix, and labels'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                void Linking.openURL('https://benchos.app.br/como-usar');
+              }}
+              style={styles.pushActionBtn}
+            >
+              <Text style={styles.pushActionBtnText}>
+                {locale === 'pt-BR' ? 'Abrir' : 'Open'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.logoutDivider} />
+
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <View style={styles.printHeaderTitleRow}>
+                <ShieldCheck size={14} color={colors.textPrimary} strokeWidth={2.1} />
+                <Text style={styles.langTitle}>
+                  {locale === 'pt-BR' ? 'Privacidade & Termos' : 'Privacy & Terms'}
+                </Text>
+              </View>
+              <Text style={styles.langSubtitle}>
+                {locale === 'pt-BR'
+                  ? 'Política de Privacidade (LGPD) em benchos.app.br'
+                  : 'Privacy Policy at benchos.app.br'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                void Linking.openURL('https://benchos.app.br/privacidade');
+              }}
+              style={styles.pushActionBtn}
+            >
+              <Text style={styles.pushActionBtnText}>
+                {locale === 'pt-BR' ? 'Ver' : 'View'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.logoutDivider} />
+
+          <View style={styles.langRow}>
+            <View style={styles.langCopy}>
+              <View style={styles.printHeaderTitleRow}>
+                <Trash2 size={14} color={colors.danger} strokeWidth={2.1} />
+                <Text style={styles.langTitle}>
+                  {locale === 'pt-BR' ? 'Excluir conta e dados' : 'Delete account & data'}
+                </Text>
+              </View>
+              <Text style={styles.langSubtitle}>
+                {locale === 'pt-BR'
+                  ? 'Solicite a exclusão definitiva da conta e dos dados (LGPD)'
+                  : 'Request permanent account and data deletion'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                void Linking.openURL('https://benchos.app.br/excluir-conta');
+              }}
+              style={styles.pushActionBtn}
+            >
+              <Text style={styles.pushActionBtnText}>
+                {locale === 'pt-BR' ? 'Abrir' : 'Open'}
+              </Text>
+            </Pressable>
           </View>
 
           <View style={styles.logoutDivider} />
